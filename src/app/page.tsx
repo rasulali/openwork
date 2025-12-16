@@ -14,14 +14,18 @@ import {
   Zap,
   Shield,
   Star,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/navbar";
 
 export default function HomePage() {
+  const router = useRouter();
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string>("");
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -64,33 +68,92 @@ export default function HomePage() {
       return;
     }
 
+    // Only images are supported for now
+    if (!file.type.startsWith("image/")) {
+      alert(
+        "Currently only image files are supported. PDF and DOCX support coming soon!",
+      );
+      return;
+    }
+
     setSelectedFile(file);
     setIsUploading(true);
+    setUploadStatus("Uploading image...");
 
-    // Create FormData and send to API
     const formData = new FormData();
     formData.append("file", file);
 
     try {
+      setUploadStatus("Extracting text from image...");
       const response = await fetch("/api/ocr", {
         method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error("Upload failed");
+        const errorData = await response.json();
+        throw new Error(errorData.details || "Upload failed");
       }
 
       const data = await response.json();
       console.log("OCR response:", data);
 
-      // Handle success - you can add your own logic here
-      alert("File uploaded successfully! Check console for OCR data.");
+      if (!data.success || !data.data) {
+        throw new Error("Invalid response from server");
+      }
+
+      // Validate the data structure
+      if (
+        !data.data.personal ||
+        !data.data.experience ||
+        !data.data.education ||
+        !data.data.skills
+      ) {
+        console.error("Invalid resume structure:", data.data);
+        throw new Error("Invalid resume structure received from server");
+      }
+
+      setUploadStatus("Parsing resume data...");
+
+      // Save the MetaResume data as a cookie
+      // Using a 1-hour expiration
+      const expires = new Date();
+      expires.setTime(expires.getTime() + 60 * 60 * 1000); // 1 hour
+
+      const cookieValue = encodeURIComponent(JSON.stringify(data.data));
+      const cookieSize = cookieValue.length;
+      
+      // Warn if cookie is approaching size limit (4KB)
+      if (cookieSize > 3500) {
+        console.warn(`Cookie size is ${cookieSize} bytes, approaching 4KB limit`);
+      }
+
+      document.cookie = `resume_upload=${cookieValue}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+      
+      // Verify cookie was set
+      const cookieSet = document.cookie.includes("resume_upload=");
+      if (!cookieSet) {
+        console.error("Failed to set cookie, cookie size may be too large");
+        throw new Error("Failed to save resume data. Data may be too large.");
+      }
+
+      console.log("Cookie set successfully, size:", cookieSize, "bytes");
+
+      setUploadStatus("Success! Redirecting to builder...");
+
+      // Redirect to builder page after a short delay to ensure cookie is set
+      setTimeout(() => {
+        router.push("/builder");
+      }, 1000);
     } catch (error) {
       console.error("Upload error:", error);
-      alert("Upload failed. Please try again.");
-    } finally {
       setIsUploading(false);
+      setUploadStatus("");
+      alert(
+        error instanceof Error
+          ? `Upload failed: ${error.message}`
+          : "Upload failed. Please try again.",
+      );
     }
   };
 
@@ -171,7 +234,7 @@ export default function HomePage() {
                       type="file"
                       id="file-upload"
                       className="sr-only"
-                      accept=".pdf,.docx,image/png,image/jpeg,image/jpg"
+                      accept="image/png,image/jpeg,image/jpg"
                       onChange={handleChange}
                       disabled={isUploading}
                     />
@@ -179,13 +242,20 @@ export default function HomePage() {
                     {selectedFile ? (
                       <div className="flex flex-col items-center gap-3">
                         <div className="rounded-full bg-primary/10 p-3">
-                          <Check className="h-6 w-6 text-primary" />
+                          {isUploading ? (
+                            <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                          ) : (
+                            <Check className="h-6 w-6 text-primary" />
+                          )}
                         </div>
                         <div className="text-sm font-medium text-foreground">
                           {selectedFile.name}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {isUploading ? "Processing..." : "Ready to process"}
+                          {uploadStatus ||
+                            (isUploading
+                              ? "Processing..."
+                              : "Ready to process")}
                         </div>
                       </div>
                     ) : (
@@ -194,7 +264,7 @@ export default function HomePage() {
                           <Upload className="h-6 w-6 text-primary" />
                         </div>
                         <div className="mb-2 text-sm font-medium text-foreground">
-                          Drag and drop your file here
+                          Drag and drop your resume image here
                         </div>
                         <div className="mb-4 text-xs text-muted-foreground">
                           or click to browse
@@ -216,16 +286,16 @@ export default function HomePage() {
 
                   <div className="mt-4 flex items-center justify-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
-                      <FileText className="h-3 w-3" />
-                      <span>PDF</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <FileText className="h-3 w-3" />
-                      <span>DOCX</span>
+                      <ImageIcon className="h-3 w-3" />
+                      <span>PNG</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <ImageIcon className="h-3 w-3" />
-                      <span>PNG/JPG</span>
+                      <span>JPG</span>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-50">
+                      <FileText className="h-3 w-3" />
+                      <span>PDF (Soon)</span>
                     </div>
                   </div>
                 </CardContent>
@@ -510,8 +580,8 @@ export default function HomePage() {
             careers
           </p>
           <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:justify-center">
-            <Button size="lg" className="text-base">
-              Start Building for Free
+            <Button size="lg" className="text-base" asChild>
+              <Link href="/builder">Start Building for Free</Link>
             </Button>
             <Button
               size="lg"

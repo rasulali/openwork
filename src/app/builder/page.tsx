@@ -47,6 +47,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
+import { deleteCookie, getCookie } from "@/utils/cookies";
 
 // Types
 interface MetaResume {
@@ -266,8 +267,62 @@ export default function BuilderPage() {
   const fragmentRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const resumeContainerRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
-  const [zoomTransform, setZoomTransform] = useState({ y: 0, scale: 0.5 });
+  const [zoomTransform, setZoomTransform] = useState({
+    y: 0,
+    scale: 0.5,
+    yPixels: 0,
+  });
   const [isDesktop, setIsDesktop] = useState(true);
+
+  useEffect(() => {
+    const uploadedResumeData = getCookie("resume_upload");
+
+    if (uploadedResumeData) {
+      try {
+        console.log("Found resume_upload cookie, parsing...");
+        const parsedResume = JSON.parse(uploadedResumeData);
+
+        // Validate that it has the correct structure
+        if (
+          parsedResume.personal &&
+          parsedResume.experience &&
+          parsedResume.education &&
+          parsedResume.skills
+        ) {
+          console.log("Loaded resume from upload:", parsedResume);
+          setResume(parsedResume);
+
+          // Clear localStorage when loading from upload to avoid conflicts
+          localStorage.removeItem("resume-draft");
+
+          // Delete the cookie after reading it
+          deleteCookie("resume_upload");
+        } else {
+          console.error("Invalid resume structure:", parsedResume);
+          deleteCookie("resume_upload");
+        }
+      } catch (error) {
+        console.error("Failed to parse uploaded resume data:", error);
+        console.error(
+          "Raw cookie data:",
+          uploadedResumeData?.substring(0, 200),
+        );
+        // Clean up the invalid cookie
+        deleteCookie("resume_upload");
+      }
+    } else {
+      // Only load from localStorage if there's no cookie data
+      try {
+        const saved = localStorage.getItem("resume-draft");
+        if (saved) {
+          console.log("Loading resume from localStorage");
+          setResume(JSON.parse(saved));
+        }
+      } catch (e) {
+        console.error("Failed to load saved resume:", e);
+      }
+    }
+  }, []);
 
   // Detect viewport size for proper layout rendering
   useEffect(() => {
@@ -293,18 +348,6 @@ export default function BuilderPage() {
     return () => clearTimeout(timer);
   }, [resume]);
 
-  // Load saved data
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("resume-draft");
-      if (saved) {
-        setResume(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error("Failed to load saved resume:", e);
-    }
-  }, []);
-
   // Calculate zoom transform based on actual fragment positions and sizes
   useEffect(() => {
     const calculateZoom = () => {
@@ -317,39 +360,56 @@ export default function BuilderPage() {
       const fallbackScale = isDesktop ? 0.5 : 0.35;
 
       if (!fragmentEl || !resumeEl || !previewEl) {
-        setZoomTransform({ y: 0, scale: fallbackScale });
+        setZoomTransform({ y: 0, scale: fallbackScale, yPixels: 0 });
         return;
       }
 
       // Check if elements are visible (have dimensions)
       const resumeRect = resumeEl.getBoundingClientRect();
       const previewRect = previewEl.getBoundingClientRect();
-      const fragmentRect = fragmentEl.getBoundingClientRect();
 
       if (resumeRect.width === 0 || resumeRect.height === 0) {
-        setZoomTransform({ y: 0, scale: fallbackScale });
+        setZoomTransform({ y: 0, scale: fallbackScale, yPixels: 0 });
         return;
       }
 
+      // Calculate fragment position relative to resume container
+      // Get unscaled dimensions
+      const resumeHeight = resumeEl.offsetHeight;
+      const fragmentHeight = fragmentEl.offsetHeight;
+
+      // Get current scale from the transform (if any)
+      // We'll use getBoundingClientRect and correct for scale
+      const fragmentRect = fragmentEl.getBoundingClientRect();
+
+      // Calculate current scale from rendered dimensions vs actual dimensions
+      const currentScaleX = resumeRect.width / resumeEl.offsetWidth;
+
+      const currentScale =
+        Math.abs(currentScaleX - 1) > 0.01 ? currentScaleX : 1;
+
+      // Get fragment position relative to resume, correcting for current scale
+      // If resume is scaled, the getBoundingClientRect positions are also scaled
+      const fragmentTopRaw = fragmentRect.top - resumeRect.top;
+      const fragmentTop =
+        currentScale !== 1 ? fragmentTopRaw / currentScale : fragmentTopRaw;
+
       // Calculate fragment's center position relative to resume container top
-      const fragmentCenterFromTop =
-        fragmentRect.top - resumeRect.top + fragmentRect.height / 2;
+      const fragmentCenterFromTop = fragmentTop + fragmentHeight / 2;
 
       // Convert to percentage of resume height
-      const yPercent = (fragmentCenterFromTop / resumeRect.height) * 100;
+      const yPercent = (fragmentCenterFromTop / resumeHeight) * 100;
 
-      // Calculate the scale needed to fit the fragment in the viewport
-      // We need to account for the current scale to get the true fragment size
-      const currentScale = resumeRect.width / resumeEl.offsetWidth;
-      const trueFragmentWidth = fragmentRect.width / currentScale;
-      const trueFragmentHeight = fragmentRect.height / currentScale;
+      // Get fragment dimensions (unscaled)
+      const fragmentWidth = fragmentEl.offsetWidth;
+      const fragmentHeightUnscaled = fragmentHeight;
 
       // Calculate scale to fit fragment in viewport (with padding)
       const availableWidth = previewRect.width * VIEWPORT_PADDING;
       const availableHeight = previewRect.height * VIEWPORT_PADDING;
 
-      const scaleByWidth = availableWidth / trueFragmentWidth;
-      const scaleByHeight = availableHeight / trueFragmentHeight;
+      const scaleByWidth = availableWidth / fragmentWidth;
+      const scaleByHeight = availableHeight / fragmentHeightUnscaled;
 
       // Use the smaller scale to ensure fragment fits both dimensions
       let idealScale = Math.min(scaleByWidth, scaleByHeight);
@@ -362,7 +422,17 @@ export default function BuilderPage() {
       const minScale = isDesktop ? 0.4 : 0.3;
       idealScale = Math.max(idealScale, minScale);
 
-      setZoomTransform({ y: yPercent, scale: idealScale });
+      // Calculate translation in pixels
+      // With transformOrigin "center center", the resume scales from its center
+      // We want to translate so the fragment center aligns with viewport center
+      // Fragment center relative to resume center: fragmentCenterFromTop - resumeCenter
+      // After scaling, this becomes (fragmentCenterFromTop - resumeCenter) * scale
+      // To center it in viewport, translate by the negative of this offset
+      const resumeCenter = resumeHeight / 2;
+      const fragmentOffsetFromCenter = fragmentCenterFromTop - resumeCenter;
+      const yPixels = -fragmentOffsetFromCenter * idealScale;
+
+      setZoomTransform({ y: yPercent, scale: idealScale, yPixels });
     };
 
     // Use requestAnimationFrame to ensure DOM is ready
@@ -466,16 +536,120 @@ export default function BuilderPage() {
 
   // Handlers
   const handleNext = useCallback(() => {
+    const currentStepData = STEPS[currentStep];
+
+    // Handle multi-step sections (experience, education)
+    if (currentStepData.multi) {
+      if (currentStepData.section === "experience") {
+        if (currentStepData.fragment === "experience-header") {
+          // Always move to bullets for the current experience
+          const bulletsStepIndex = STEPS.findIndex(
+            (s) => s.fragment === "experience-bullets",
+          );
+          if (bulletsStepIndex !== -1) {
+            setCurrentStep(bulletsStepIndex);
+          }
+          return;
+        } else if (currentStepData.fragment === "experience-bullets") {
+          // If not on last experience, move to next experience header
+          if (currentExpIndex < resume.experience.length - 1) {
+            setCurrentExpIndex(currentExpIndex + 1);
+            const headerStepIndex = STEPS.findIndex(
+              (s) => s.fragment === "experience-header",
+            );
+            if (headerStepIndex !== -1) {
+              setCurrentStep(headerStepIndex);
+            }
+            return;
+          }
+          // If on last experience bullets, move to next section
+          // Reset to first experience for when user comes back
+          setCurrentExpIndex(0);
+          if (currentStep < STEPS.length - 1) {
+            setCurrentStep(currentStep + 1);
+          }
+          return;
+        }
+      } else if (currentStepData.section === "education") {
+        // If not on last education, move to next education
+        if (currentEduIndex < resume.education.length - 1) {
+          setCurrentEduIndex(currentEduIndex + 1);
+          return;
+        }
+        // If on last education, move to next section
+        setCurrentEduIndex(0);
+        if (currentStep < STEPS.length - 1) {
+          setCurrentStep(currentStep + 1);
+        }
+        return;
+      }
+    }
+
+    // Default: move to next step
     if (currentStep < STEPS.length - 1) {
       setCurrentStep(currentStep + 1);
     }
-  }, [currentStep]);
+  }, [
+    currentStep,
+    currentExpIndex,
+    currentEduIndex,
+    resume.experience.length,
+    resume.education.length,
+  ]);
 
   const handlePrevious = useCallback(() => {
+    const currentStepData = STEPS[currentStep];
+
+    // Handle multi-step sections (experience, education)
+    if (currentStepData.multi) {
+      if (currentStepData.section === "experience") {
+        if (currentStepData.fragment === "experience-header") {
+          // If on first experience header, move to previous section
+          if (currentExpIndex === 0) {
+            if (currentStep > 0) {
+              setCurrentStep(currentStep - 1);
+            }
+            return;
+          }
+          // If not on first experience, move to previous experience's bullets
+          setCurrentExpIndex(currentExpIndex - 1);
+          const bulletsStepIndex = STEPS.findIndex(
+            (s) => s.fragment === "experience-bullets",
+          );
+          if (bulletsStepIndex !== -1) {
+            setCurrentStep(bulletsStepIndex);
+          }
+          return;
+        } else if (currentStepData.fragment === "experience-bullets") {
+          // Always move back to header for the same experience
+          const headerStepIndex = STEPS.findIndex(
+            (s) => s.fragment === "experience-header",
+          );
+          if (headerStepIndex !== -1) {
+            setCurrentStep(headerStepIndex);
+          }
+          return;
+        }
+      } else if (currentStepData.section === "education") {
+        // If not on first education, move to previous education
+        if (currentEduIndex > 0) {
+          setCurrentEduIndex(currentEduIndex - 1);
+          return;
+        }
+        // If on first education, move to previous section
+        setCurrentEduIndex(0);
+        if (currentStep > 0) {
+          setCurrentStep(currentStep - 1);
+        }
+        return;
+      }
+    }
+
+    // Default: move to previous step
     if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
     }
-  }, [currentStep]);
+  }, [currentStep, currentExpIndex, currentEduIndex]);
 
   const handleReset = useCallback(() => {
     setResume(INITIAL_RESUME);
@@ -811,37 +985,6 @@ export default function BuilderPage() {
             <Label className="text-base font-medium">
               Experience {currentExpIndex + 1} of {resume.experience.length}
             </Label>
-            {resume.experience.length > 1 && (
-              <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() =>
-                    setCurrentExpIndex(Math.max(0, currentExpIndex - 1))
-                  }
-                  disabled={currentExpIndex === 0}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() =>
-                    setCurrentExpIndex(
-                      Math.min(
-                        resume.experience.length - 1,
-                        currentExpIndex + 1,
-                      ),
-                    )
-                  }
-                  disabled={currentExpIndex === resume.experience.length - 1}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
           </div>
 
           <Separator />
@@ -911,10 +1054,16 @@ export default function BuilderPage() {
 
           <Separator />
 
-          <Button onClick={addExperience} variant="outline" className="w-full">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Another Experience
-          </Button>
+          {currentExpIndex === resume.experience.length - 1 && (
+            <Button
+              onClick={addExperience}
+              variant="outline"
+              className="w-full"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Another Experience
+            </Button>
+          )}
         </div>
       );
     }
@@ -926,6 +1075,12 @@ export default function BuilderPage() {
       const exp = resume.experience[currentExpIndex];
       return (
         <div className="space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <Label className="text-base font-medium">
+              Experience {currentExpIndex + 1} of {resume.experience.length}
+            </Label>
+          </div>
+          <Separator />
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <Label htmlFor="bullet">Responsibilities & Achievements</Label>
@@ -994,37 +1149,6 @@ export default function BuilderPage() {
             <Label className="text-base font-medium">
               Education {currentEduIndex + 1} of {resume.education.length}
             </Label>
-            {resume.education.length > 1 && (
-              <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() =>
-                    setCurrentEduIndex(Math.max(0, currentEduIndex - 1))
-                  }
-                  disabled={currentEduIndex === 0}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() =>
-                    setCurrentEduIndex(
-                      Math.min(
-                        resume.education.length - 1,
-                        currentEduIndex + 1,
-                      ),
-                    )
-                  }
-                  disabled={currentEduIndex === resume.education.length - 1}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
           </div>
 
           <Separator />
@@ -1079,10 +1203,12 @@ export default function BuilderPage() {
 
           <Separator />
 
-          <Button onClick={addEducation} variant="outline" className="w-full">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Another Education
-          </Button>
+          {currentEduIndex === resume.education.length - 1 && (
+            <Button onClick={addEducation} variant="outline" className="w-full">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Another Education
+            </Button>
+          )}
         </div>
       );
     }
@@ -1765,10 +1891,7 @@ export default function BuilderPage() {
                   <motion.div
                     animate={{
                       scale: zoomTransform.scale,
-                      // Translate so the fragment's center aligns with viewport center
-                      // yPercent is fragment center as % from resume top (0-100)
-                      // Shift so that yPercent point aligns with center (50%)
-                      y: `${(50 - zoomTransform.y) * zoomTransform.scale}%`,
+                      y: zoomTransform.yPixels,
                     }}
                     transition={{
                       type: "spring",
@@ -1878,8 +2001,7 @@ export default function BuilderPage() {
               <motion.div
                 animate={{
                   scale: zoomTransform.scale,
-                  // Same centering logic as desktop
-                  y: `${(50 - zoomTransform.y) * zoomTransform.scale}%`,
+                  y: zoomTransform.yPixels,
                 }}
                 transition={{
                   type: "spring",
