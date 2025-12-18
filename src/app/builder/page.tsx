@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { pdf } from "@react-pdf/renderer";
+import { ResumePDF } from "@/components/resume-pdf";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -46,6 +48,8 @@ import {
   GraduationCap,
   Wrench,
   Eye,
+  Download,
+  Loader2,
 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { getLocalStorage, removeLocalStorage } from "@/utils/localStorage";
@@ -209,22 +213,22 @@ const SECTION_ICONS: Record<SectionName, React.ReactNode> = {
 };
 
 // Maximum scale limits
-const MAX_DESKTOP_SCALE = 1.2; // Reasonable max zoom on desktop
-const MAX_MOBILE_SCALE = 2.5; // More aggressive on mobile
-const VIEWPORT_PADDING = 0.85; // Use 85% of viewport for the fragment
+const MAX_DESKTOP_SCALE = 1.2;
+const MAX_MOBILE_SCALE = 2.5;
+const VIEWPORT_PADDING = 0.85;
 
 // Auto-Scaling Layout Configuration
 type LayoutConfig = {
   id: string;
-  fontSize: number; // Base font size in pt (e.g. 10)
-  headerSize: number; // Name font size in pt (e.g. 28)
-  roleSize: number; // Role font size in pt (e.g. 12)
-  sectionHeaderSize: number; // Section title size in pt (e.g. 11)
-  sectionMargin: number; // Margin bottom for sections in px
-  itemMargin: number; // Margin bottom for items in px
-  lineHeight: number; // CSS line-height unitless
-  padding: number; // Page padding in mm
-  gap: number; // Gap between elements in px
+  fontSize: number;
+  headerSize: number;
+  roleSize: number;
+  sectionHeaderSize: number;
+  sectionMargin: number;
+  itemMargin: number;
+  lineHeight: number;
+  padding: number;
+  gap: number;
 };
 
 const DENSITY_PRESETS: LayoutConfig[] = [
@@ -234,10 +238,10 @@ const DENSITY_PRESETS: LayoutConfig[] = [
     headerSize: 28,
     roleSize: 12,
     sectionHeaderSize: 11,
-    sectionMargin: 24, // mb-6
-    itemMargin: 8, // space-y-2 -> ~8px
-    lineHeight: 1.5, // leading-relaxed
-    padding: 20, // 20mm
+    sectionMargin: 24,
+    itemMargin: 8,
+    lineHeight: 1.5,
+    padding: 20,
     gap: 8,
   },
   {
@@ -348,7 +352,6 @@ export default function BuilderPage() {
         console.log("Found resume_upload in localStorage, parsing...");
         const parsedResume = JSON.parse(uploadedResumeData);
 
-        // Validate that it has the correct structure
         if (
           parsedResume.personal &&
           parsedResume.experience &&
@@ -358,10 +361,8 @@ export default function BuilderPage() {
           console.log("Loaded resume from upload:", parsedResume);
           setResume(parsedResume);
 
-          // Clear draft localStorage when loading from upload to avoid conflicts
           localStorage.removeItem("resume-draft");
 
-          // Remove the upload data after reading it
           removeLocalStorage("resume_upload");
         } else {
           console.error("Invalid resume structure:", parsedResume);
@@ -373,11 +374,9 @@ export default function BuilderPage() {
           "Raw localStorage data:",
           uploadedResumeData?.substring(0, 200),
         );
-        // Clean up the invalid data
         removeLocalStorage("resume_upload");
       }
     } else {
-      // Only load from localStorage draft if there's no upload data
       try {
         const saved = localStorage.getItem("resume-draft");
         if (saved) {
@@ -419,7 +418,6 @@ export default function BuilderPage() {
     const calculateZoom = () => {
       const fragment = currentStepData.fragment;
 
-      // Determine the specific DOM key to look for
       let lookupKey: any = fragment;
       if (
         fragment === "experience-header" ||
@@ -434,7 +432,6 @@ export default function BuilderPage() {
       const resumeEl = resumeContainerRef.current;
       const previewEl = previewContainerRef.current;
 
-      // Default fallback
       const fallbackScale = isDesktop ? 1.1 : 0.35;
 
       if (!fragmentEl || !resumeEl || !previewEl) {
@@ -442,7 +439,6 @@ export default function BuilderPage() {
         return;
       }
 
-      // Check if elements are visible (have dimensions)
       const resumeRect = resumeEl.getBoundingClientRect();
       const previewRect = previewEl.getBoundingClientRect();
 
@@ -451,57 +447,37 @@ export default function BuilderPage() {
         return;
       }
 
-      // Calculate fragment position relative to resume container using offsetTop
-      // This avoids issues with current transforms/transitions affecting getBoundingClientRect
       let fragmentTop = 0;
       let currentEl: HTMLElement | null = fragmentEl;
 
-      // Traverse up to find offset relative to resume container
       while (currentEl && currentEl !== resumeEl) {
         fragmentTop += currentEl.offsetTop;
         currentEl = currentEl.offsetParent as HTMLElement;
       }
 
-      // Get unscaled dimensions from layout
       const resumeHeight = resumeEl.offsetHeight;
       const fragmentHeight = fragmentEl.offsetHeight;
       const fragmentWidth = fragmentEl.offsetWidth;
 
-      // Calculate scale to fit fragment in viewport (with padding)
       const availableWidth = previewRect.width * VIEWPORT_PADDING;
       const availableHeight = previewRect.height * VIEWPORT_PADDING;
 
       const scaleByWidth = availableWidth / fragmentWidth;
       const scaleByHeight = availableHeight / fragmentHeight;
 
-      // Use the smaller scale to ensure fragment fits both dimensions
       let idealScale = Math.min(scaleByWidth, scaleByHeight);
 
-      // Apply maximum limits
       const maxScale = isDesktop ? 1.1 : MAX_MOBILE_SCALE;
       idealScale = Math.min(idealScale, maxScale);
 
-      // Ensure minimum reasonable scale
       const minScale = isDesktop ? 0.4 : 0.3;
       idealScale = Math.max(idealScale, minScale);
 
-      // Calculate translation in pixels
-      // "move top center of the fragment to center of viewport"
       const resumeCenter = resumeHeight / 2;
 
-      // Calculate where the fragment top is relative to the resume center (unscaled)
       const fragmentTopFromCenter = fragmentTop - resumeCenter;
 
-      // Scale that distance to find the visual offset
       const scaledFragmentTopFromCenter = fragmentTopFromCenter * idealScale;
-
-      // We want the visual Top of the fragment to be at the Center of the Viewport
-      // Resume Visual Center is at Viewport Center + yPixels
-      // Fragment Visual Top is at Resume Visual Center + scaledFragmentTopFromCenter
-      // So Fragment Visual Top = Viewport Center + yPixels + scaledFragmentTopFromCenter
-      // We want Fragment Visual Top = Viewport Center
-      // 0 = yPixels + scaledFragmentTopFromCenter
-      // yPixels = -scaledFragmentTopFromCenter
 
       const yPixels = -scaledFragmentTopFromCenter;
 
@@ -516,12 +492,11 @@ export default function BuilderPage() {
     currentExpIndex,
     currentEduIndex,
     isDesktop,
-    resume.experience, // Recalculate if content changes
+    resume.experience,
     resume.education,
-    resume, // Recalculate if any content changes size
+    resume,
   ]);
 
-  // Normalized completion flags so progress and section badges stay in sync
   const stepCompletion = useMemo(() => {
     const nameComplete =
       hasText(resume.personal.firstName) && hasText(resume.personal.lastName);
@@ -559,11 +534,9 @@ export default function BuilderPage() {
   );
   const [isAutoScaling, setIsAutoScaling] = useState(true);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
-  const [previewScale, setPreviewScale] = useState(0.7); // Default scale for preview mode
-  // Track the minimum valid preset index (all presets from this index onward are valid)
-  // This only gets updated when auto-scaling finds the first fitting preset
+  const [previewScale, setPreviewScale] = useState(0.7);
+  const [isExporting, setIsExporting] = useState(false);
   const [minValidPresetIndex, setMinValidPresetIndex] = useState(0);
-  // Track if we're currently in the middle of an auto-scaling search
   const [isAutoScalingSettled, setIsAutoScalingSettled] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -575,19 +548,15 @@ export default function BuilderPage() {
       const container = previewContainerRef.current;
       if (!container) return;
 
-      // A4 height is 297mm = ~1123px at 96dpi
       const a4Height = 1123;
       const containerHeight = container.offsetHeight;
-      // Leave some padding (32px top/bottom)
       const availableHeight = containerHeight - 64;
       const scale = Math.min(availableHeight / a4Height, 1);
       setPreviewScale(scale);
     };
 
-    // Calculate after a short delay to allow layout to settle
     const timeoutId = setTimeout(calculatePreviewScale, 50);
 
-    // Also recalculate on resize
     const resizeObserver = new ResizeObserver(calculatePreviewScale);
     if (previewContainerRef.current) {
       resizeObserver.observe(previewContainerRef.current);
@@ -606,13 +575,9 @@ export default function BuilderPage() {
       const content = contentRef.current;
       if (!container || !content) return;
 
-      // Get page height in pixels (297mm approx 1122px at 96dpi, but we rely on offsetHeight)
       const pageHeight = container.offsetHeight;
-      // contentRef already includes padding in its offsetHeight since padding is applied to it
       const contentHeight = content.offsetHeight;
 
-      // Check if content exceeds page height
-      // We add a small buffer (2px) to avoid precision jitter
       const isOverflowing = contentHeight > pageHeight - 2;
 
       const currentIndex = DENSITY_PRESETS.findIndex(
@@ -620,10 +585,12 @@ export default function BuilderPage() {
       );
 
       if (isOverflowing) {
-        // Mark as not settled while still searching
         setIsAutoScalingSettled(false);
 
-        // Auto-scale only if enabled
+        if (currentIndex + 1 > minValidPresetIndex) {
+          setMinValidPresetIndex(currentIndex + 1);
+        }
+
         if (isAutoScaling && currentIndex < DENSITY_PRESETS.length - 1) {
           console.log(
             `Overflow detected (${contentHeight}px > ${pageHeight}px). Switching to ${DENSITY_PRESETS[currentIndex + 1].id}`,
@@ -631,13 +598,9 @@ export default function BuilderPage() {
           setLayoutConfig(DENSITY_PRESETS[currentIndex + 1]);
         }
       } else {
-        // Current preset fits!
-        // Only update minValidPresetIndex in these cases:
-        // 1. Auto-scaling AND we started from Standard (index 0) - this is a fresh search
-        // 2. Manual mode AND this preset is less dense than current minimum
         const shouldUpdateMin =
-          (isAutoScaling && !isAutoScalingSettled) || // Auto-scaling search in progress
-          (!isAutoScaling && currentIndex < minValidPresetIndex); // Manual found better option
+          (isAutoScaling && !isAutoScalingSettled) ||
+          (!isAutoScaling && currentIndex < minValidPresetIndex);
 
         if (shouldUpdateMin) {
           setMinValidPresetIndex(currentIndex);
@@ -646,9 +609,7 @@ export default function BuilderPage() {
       }
     };
 
-    // Use ResizeObserver to detect content size changes
     const resizeObserver = new ResizeObserver(() => {
-      // Defer check to next frame to avoid loop limits
       requestAnimationFrame(checkOverflow);
     });
 
@@ -659,7 +620,6 @@ export default function BuilderPage() {
     return () => resizeObserver.disconnect();
   }, [layoutConfig, isAutoScaling, minValidPresetIndex]);
 
-  // Helper to check if a preset is valid (fits within page)
   const isPresetValid = useCallback(
     (presetId: string) => {
       const presetIndex = DENSITY_PRESETS.findIndex((p) => p.id === presetId);
@@ -668,25 +628,18 @@ export default function BuilderPage() {
     [minValidPresetIndex],
   );
 
-  // When Auto mode is enabled, reset to Standard to find the optimal preset
   useEffect(() => {
     if (isAutoScaling && layoutConfig.id !== "standard") {
-      // Reset to Standard and let the auto-scaling logic find the optimal preset
       setLayoutConfig(DENSITY_PRESETS[0]);
       setIsAutoScalingSettled(false);
     }
-  }, [isAutoScaling]); // Only trigger when isAutoScaling changes
+  }, [isAutoScaling]);
 
-  // Reset to standard when content changes significantly, to allow re-optimization
   useEffect(() => {
     if (!isAutoScaling) return;
 
-    // Only reset if we are not already standard AND content structure changed
     if (layoutConfig.id !== "standard") {
-      // We reset to standard and let the overflow checker scale it down again if needed.
-      // This prevents getting stuck in "dense" mode if user deletes text.
       setLayoutConfig(DENSITY_PRESETS[0]);
-      // Also reset the minValidPresetIndex to allow rediscovery
       setMinValidPresetIndex(0);
       setIsAutoScalingSettled(false);
     }
@@ -715,7 +668,6 @@ export default function BuilderPage() {
     [resume],
   );
 
-  // Memoized calculations
   const progress = useMemo(() => {
     const completed = STEPS.filter(
       (step) =>
@@ -750,15 +702,12 @@ export default function BuilderPage() {
     [getSectionStatus],
   );
 
-  // Handlers
   const handleNext = useCallback(() => {
     const currentStepData = STEPS[currentStep];
 
-    // Handle multi-step sections (experience, education)
     if (currentStepData.multi) {
       if (currentStepData.section === "experience") {
         if (currentStepData.fragment === "experience-header") {
-          // Always move to bullets for the current experience
           const bulletsStepIndex = STEPS.findIndex(
             (s) => s.fragment === "experience-bullets",
           );
@@ -767,7 +716,6 @@ export default function BuilderPage() {
           }
           return;
         } else if (currentStepData.fragment === "experience-bullets") {
-          // If not on last experience, move to next experience header
           if (currentExpIndex < resume.experience.length - 1) {
             setCurrentExpIndex(currentExpIndex + 1);
             const headerStepIndex = STEPS.findIndex(
@@ -778,8 +726,6 @@ export default function BuilderPage() {
             }
             return;
           }
-          // If on last experience bullets, move to next section
-          // Reset to first experience for when user comes back
           setCurrentExpIndex(0);
           if (currentStep < STEPS.length - 1) {
             setCurrentStep(currentStep + 1);
@@ -787,12 +733,10 @@ export default function BuilderPage() {
           return;
         }
       } else if (currentStepData.section === "education") {
-        // If not on last education, move to next education
         if (currentEduIndex < resume.education.length - 1) {
           setCurrentEduIndex(currentEduIndex + 1);
           return;
         }
-        // If on last education, move to next section
         setCurrentEduIndex(0);
         if (currentStep < STEPS.length - 1) {
           setCurrentStep(currentStep + 1);
@@ -801,7 +745,6 @@ export default function BuilderPage() {
       }
     }
 
-    // Default: move to next step
     if (currentStep < STEPS.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
@@ -818,18 +761,15 @@ export default function BuilderPage() {
   const handlePrevious = useCallback(() => {
     const currentStepData = STEPS[currentStep];
 
-    // Handle multi-step sections (experience, education)
     if (currentStepData.multi) {
       if (currentStepData.section === "experience") {
         if (currentStepData.fragment === "experience-header") {
-          // If on first experience header, move to previous section
           if (currentExpIndex === 0) {
             if (currentStep > 0) {
               setCurrentStep(currentStep - 1);
             }
             return;
           }
-          // If not on first experience, move to previous experience's bullets
           setCurrentExpIndex(currentExpIndex - 1);
           const bulletsStepIndex = STEPS.findIndex(
             (s) => s.fragment === "experience-bullets",
@@ -839,7 +779,6 @@ export default function BuilderPage() {
           }
           return;
         } else if (currentStepData.fragment === "experience-bullets") {
-          // Always move back to header for the same experience
           const headerStepIndex = STEPS.findIndex(
             (s) => s.fragment === "experience-header",
           );
@@ -849,12 +788,10 @@ export default function BuilderPage() {
           return;
         }
       } else if (currentStepData.section === "education") {
-        // If not on first education, move to previous education
         if (currentEduIndex > 0) {
           setCurrentEduIndex(currentEduIndex - 1);
           return;
         }
-        // If on first education, move to previous section
         setCurrentEduIndex(0);
         if (currentStep > 0) {
           setCurrentStep(currentStep - 1);
@@ -863,7 +800,6 @@ export default function BuilderPage() {
       }
     }
 
-    // Default: move to previous step
     if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
     }
@@ -875,7 +811,6 @@ export default function BuilderPage() {
       if (stepIndex !== -1) {
         setCurrentStep(stepIndex);
         if (typeof index === "number") {
-          // Determine if it's experience or education based on the fragment
           if (fragment.startsWith("experience")) {
             setCurrentExpIndex(index);
           } else if (fragment === "education") {
@@ -1035,7 +970,6 @@ export default function BuilderPage() {
     [],
   );
 
-  // Callback refs for fragments
   const setFragmentRef = useCallback(
     (key: string) => (el: HTMLDivElement | null) => {
       fragmentRefs.current[key] = el;
@@ -1043,7 +977,33 @@ export default function BuilderPage() {
     [],
   );
 
-  // Date Picker Component using Popover
+  const exportPDF = useCallback(async () => {
+    if (isExporting) return;
+
+    setIsExporting(true);
+    try {
+      const blob = await pdf(<ResumePDF resume={resume} />).toBlob();
+
+      const firstName = resume.personal.firstName?.trim() || "";
+      const lastName = resume.personal.lastName?.trim() || "";
+      const name = [firstName, lastName].filter(Boolean).join("_") || "resume";
+      const filename = `${name}_resume.pdf`;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to export PDF:", error);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [isExporting, resume]);
+
   const DatePicker = ({
     id,
     label,
@@ -1104,7 +1064,6 @@ export default function BuilderPage() {
     );
   };
 
-  // Render input fields based on current step
   const renderInputs = () => {
     const step = currentStepData;
 
@@ -1548,18 +1507,14 @@ export default function BuilderPage() {
     return "opacity-40";
   };
 
-  // A4 Resume Component with zoom capability
   const renderResume = () => {
-    // In Preview Mode, no fragment is active (no zoom/highlight)
     const isFragmentActive = (fragment: FragmentName) =>
       !isPreviewMode && currentStepData.fragment === fragment;
 
-    // Disable click handlers in Preview Mode
     const handleFragmentClick = (fn: () => void) => {
       if (!isPreviewMode) fn();
     };
 
-    // Helper to determine if content is placeholder
     const hasFirst = hasText(resume.personal.firstName);
     const hasLast = hasText(resume.personal.lastName);
     const headline =
@@ -1615,10 +1570,11 @@ export default function BuilderPage() {
             }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
             style={{ marginBottom: layoutConfig.sectionMargin / 3 + "px" }}
-            className={`transition-all duration-300 rounded-lg -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("name")} ${isFragmentActive("name")
-              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-              : ""
-              }`}
+            className={`transition-all duration-300 rounded-lg -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("name")} ${
+              isFragmentActive("name")
+                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                : ""
+            }`}
           >
             <h1
               className="font-bold tracking-wide uppercase leading-tight"
@@ -1663,10 +1619,11 @@ export default function BuilderPage() {
               marginBottom: layoutConfig.sectionMargin + "px",
               fontSize: `${layoutConfig.fontSize}pt`,
             }}
-            className={`transition-all duration-300 rounded-lg py-1 -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("contact")} ${isFragmentActive("contact")
-              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-              : ""
-              }`}
+            className={`transition-all duration-300 rounded-lg py-1 -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("contact")} ${
+              isFragmentActive("contact")
+                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                : ""
+            }`}
           >
             <p className="flex flex-wrap items-center leading-relaxed">
               {contactSegments.map((segment, idx) => {
@@ -1703,10 +1660,11 @@ export default function BuilderPage() {
             }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
             style={{ marginBottom: layoutConfig.sectionMargin + "px" }}
-            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("summary")} ${isFragmentActive("summary")
-              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-              : ""
-              }`}
+            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("summary")} ${
+              isFragmentActive("summary")
+                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                : ""
+            }`}
           >
             <h3
               className="font-bold tracking-wider text-foreground uppercase border-b border-black pb-1"
@@ -1780,10 +1738,11 @@ export default function BuilderPage() {
                         stiffness: 240,
                         damping: 24,
                       }}
-                      className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${isFragmentActive("experience-header") && isCurrentExp
-                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                        : ""
-                        } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
+                      className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${
+                        isFragmentActive("experience-header") && isCurrentExp
+                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                          : ""
+                      } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
                     >
                       <div className="flex justify-between items-baseline mb-1">
                         <p className="font-bold">
@@ -1873,10 +1832,11 @@ export default function BuilderPage() {
                         stiffness: 240,
                         damping: 24,
                       }}
-                      className={`mt-1 transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${isFragmentActive("experience-bullets") && isCurrentExp
-                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                        : ""
-                        }`}
+                      className={`mt-1 transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${
+                        isFragmentActive("experience-bullets") && isCurrentExp
+                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                          : ""
+                      }`}
                     >
                       {exp.description.length > 0 ? (
                         <ul className="list-disc list-outside ml-4 space-y-1">
@@ -1908,10 +1868,11 @@ export default function BuilderPage() {
             }}
             transition={{ type: "spring", stiffness: 240, damping: 24 }}
             style={{ marginBottom: layoutConfig.sectionMargin + "px" }}
-            className={`transition-all duration-300 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -mx-2 ${getFragmentOpacity("education")} ${isFragmentActive("education")
-              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-              : ""
-              }`}
+            className={`transition-all duration-300 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -mx-2 ${getFragmentOpacity("education")} ${
+              isFragmentActive("education")
+                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                : ""
+            }`}
           >
             <h3
               className="font-bold tracking-wider text-foreground uppercase border-b border-black pb-1"
@@ -2025,10 +1986,11 @@ export default function BuilderPage() {
               scale: isFragmentActive("skills") ? 1.02 : 1,
             }}
             transition={{ type: "spring", stiffness: 240, damping: 24 }}
-            className={`grid grid-cols-3 gap-8 transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${isFragmentActive("skills")
-              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-              : ""
-              }`}
+            className={`grid grid-cols-3 gap-8 transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${
+              isFragmentActive("skills")
+                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                : ""
+            }`}
           >
             <div>
               <h3
@@ -2154,12 +2116,13 @@ export default function BuilderPage() {
                             );
                             if (stepIndex !== -1) setCurrentStep(stepIndex);
                           }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left ${isActive
-                            ? "bg-primary text-primary-foreground"
-                            : status === "complete"
-                              ? "bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20"
-                              : "hover:bg-muted"
-                            }`}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left ${
+                            isActive
+                              ? "bg-primary text-primary-foreground"
+                              : status === "complete"
+                                ? "bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20"
+                                : "hover:bg-muted"
+                          }`}
                         >
                           <span className="shrink-0">
                             {SECTION_ICONS[section]}
@@ -2252,12 +2215,13 @@ export default function BuilderPage() {
                                 setLayoutConfig(preset);
                               }
                             }}
-                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isSelected
-                              ? "bg-primary text-primary-foreground shadow-sm"
-                              : isValid
-                                ? "hover:text-foreground text-muted-foreground"
-                                : "text-muted-foreground/40 cursor-not-allowed"
-                              }`}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : isValid
+                                  ? "hover:text-foreground text-muted-foreground"
+                                  : "text-muted-foreground/40 cursor-not-allowed"
+                            }`}
                           >
                             {preset.id.charAt(0).toUpperCase() +
                               preset.id.slice(1).replace("-", " ")}
@@ -2292,6 +2256,23 @@ export default function BuilderPage() {
                     {renderResume()}
                   </motion.div>
                 </div>
+
+                {/* Export PDF Button - Bottom Right (Desktop) */}
+                {isPreviewMode && (
+                  <Button
+                    onClick={exportPDF}
+                    disabled={isExporting}
+                    className="absolute bottom-6 right-6 z-50 shadow-lg"
+                    size="lg"
+                  >
+                    {isExporting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    {isExporting ? "Exporting..." : "Export PDF"}
+                  </Button>
+                )}
               </div>
 
               {/* Form Area & Nav - Hidden in Preview Mode */}
@@ -2335,7 +2316,7 @@ export default function BuilderPage() {
                         </Button>
                         <Button
                           onClick={handleNext}
-                          disabled={false} // Always enabled to allow Finish
+                          disabled={false}
                           className="flex-1"
                         >
                           {currentStep === STEPS.length - 1
@@ -2425,12 +2406,13 @@ export default function BuilderPage() {
                             setLayoutConfig(preset);
                           }
                         }}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isSelected
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : isValid
-                            ? "text-muted-foreground"
-                            : "text-muted-foreground/40"
-                          }`}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : isValid
+                              ? "text-muted-foreground"
+                              : "text-muted-foreground/40"
+                        }`}
                       >
                         {preset.id.charAt(0).toUpperCase()}
                       </button>
@@ -2445,11 +2427,11 @@ export default function BuilderPage() {
                 animate={{
                   scale: isPreviewMode
                     ? Math.min(
-                      ((previewContainerRef.current?.offsetWidth || 400) /
-                        794) *
-                      0.95,
-                      0.5,
-                    )
+                        ((previewContainerRef.current?.offsetWidth || 400) /
+                          794) *
+                          0.95,
+                        0.5,
+                      )
                     : zoomTransform.scale,
                   y: isPreviewMode ? 0 : zoomTransform.yPixels,
                 }}
@@ -2465,6 +2447,23 @@ export default function BuilderPage() {
                 {renderResume()}
               </motion.div>
             </div>
+
+            {/* Export PDF Button - Bottom Right (Mobile) */}
+            {isPreviewMode && (
+              <Button
+                onClick={exportPDF}
+                disabled={isExporting}
+                className="absolute bottom-4 right-4 z-50 shadow-lg"
+                size="default"
+              >
+                {isExporting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                {isExporting ? "Exporting..." : "Export PDF"}
+              </Button>
+            )}
           </div>
 
           {/* Form Area - Hidden in Preview Mode */}

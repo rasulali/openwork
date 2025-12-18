@@ -115,8 +115,13 @@ export default function HomePage() {
         console.log("Resume data saved to localStorage successfully");
       } catch (error) {
         console.error("Failed to save resume data to localStorage:", error);
-        if (error instanceof DOMException && error.name === "QuotaExceededError") {
-          throw new Error("Storage quota exceeded. Please clear some data and try again.");
+        if (
+          error instanceof DOMException &&
+          error.name === "QuotaExceededError"
+        ) {
+          throw new Error(
+            "Storage quota exceeded. Please clear some data and try again.",
+          );
         }
         throw new Error("Failed to save resume data. Please try again.");
       }
@@ -152,7 +157,7 @@ export default function HomePage() {
                 <Sparkles className="h-4 w-4" />
                 Free Forever
               </div>
-              <h1 className="font-sans text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl text-balance">
+              <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl text-balance">
                 Build your perfect resume in minutes
               </h1>
               <p className="mt-6 text-lg text-muted-foreground leading-relaxed text-pretty">
@@ -216,7 +221,7 @@ export default function HomePage() {
                       type="file"
                       id="file-upload"
                       className="sr-only"
-                      accept="image/png,image/jpeg,image/jpg"
+                      accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,.docx,image/png,image/jpeg,image/jpg"
                       onChange={handleChange}
                       disabled={isUploading}
                     />
@@ -246,7 +251,7 @@ export default function HomePage() {
                           <Upload className="h-6 w-6 text-primary" />
                         </div>
                         <div className="mb-2 text-sm font-medium text-foreground">
-                          Drag and drop your resume image here
+                          Drag and drop your resume here
                         </div>
                         <div className="mb-4 text-xs text-muted-foreground">
                           or click to browse
@@ -268,16 +273,20 @@ export default function HomePage() {
 
                   <div className="mt-4 flex items-center justify-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
+                      <FileText className="h-3 w-3" />
+                      <span>PDF</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <FileText className="h-3 w-3" />
+                      <span>DOCX</span>
+                    </div>
+                    <div className="flex items-center gap-1">
                       <ImageIcon className="h-3 w-3" />
                       <span>PNG</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <ImageIcon className="h-3 w-3" />
                       <span>JPG</span>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-50">
-                      <FileText className="h-3 w-3" />
-                      <span>PDF (Soon)</span>
                     </div>
                   </div>
                 </CardContent>
@@ -294,7 +303,7 @@ export default function HomePage() {
       >
         <div className="mx-auto max-w-7xl">
           <div className="text-center">
-            <h2 className="font-sans text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
+            <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
               Everything you need to land your dream job
             </h2>
             <p className="mt-4 text-lg text-muted-foreground text-pretty">
@@ -346,7 +355,7 @@ export default function HomePage() {
                   <div className="mb-4 inline-flex rounded-lg bg-primary/10 p-3">
                     <feature.icon className="h-6 w-6 text-primary" />
                   </div>
-                  <h3 className="mb-2 font-sans text-lg font-semibold text-foreground">
+                  <h3 className="mb-2 text-lg font-semibold text-foreground">
                     {feature.title}
                   </h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
@@ -366,7 +375,7 @@ export default function HomePage() {
       >
         <div className="mx-auto max-w-7xl">
           <div className="text-center">
-            <h2 className="font-sans text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
+            <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
               Professional templates for every career
             </h2>
             <p className="mt-4 text-lg text-muted-foreground text-pretty">
@@ -390,7 +399,7 @@ export default function HomePage() {
                 <div className="aspect-3/4 bg-linear-to-br from-muted to-muted/50" />
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-sans text-base font-semibold text-foreground">
+                    <h3 className="text-base font-semibold text-foreground">
                       {template}
                     </h3>
                     <Button size="sm" variant="outline">
@@ -411,7 +420,7 @@ export default function HomePage() {
       >
         <div className="mx-auto max-w-7xl">
           <div className="text-center">
-            <h2 className="font-sans text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
+            <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
               Simple, transparent pricing
             </h2>
             <p className="mt-4 text-lg text-muted-foreground text-pretty">
@@ -423,9 +432,7 @@ export default function HomePage() {
             {/* Free Tier */}
             <Card className="border-border">
               <CardContent className="p-8">
-                <h3 className="font-sans text-2xl font-bold text-foreground">
-                  Free
-                </h3>
+                <h3 className="text-2xl font-bold text-foreground">Free</h3>
                 <div className="mt-4 flex items-baseline">
                   <span className="text-5xl font-bold text-foreground">$0</span>
                   <span className="ml-2 text-muted-foreground">/forever</span>
@@ -461,9 +468,7 @@ export default function HomePage() {
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                   Most Popular
                 </div>
-                <h3 className="font-sans text-2xl font-bold text-foreground">
-                  Premium
-                </h3>
+                <h3 className="text-2xl font-bold text-foreground">Premium</h3>
                 <div className="mt-4 flex items-baseline">
                   <span className="text-5xl font-bold text-foreground">$9</span>
                   <span className="ml-2 text-muted-foreground">/month</span>
@@ -497,7 +502,7 @@ export default function HomePage() {
       <section className="border-b border-border bg-muted/30 px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
         <div className="mx-auto max-w-7xl">
           <div className="text-center">
-            <h2 className="font-sans text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
+            <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
               Loved by job seekers worldwide
             </h2>
           </div>
@@ -537,7 +542,7 @@ export default function HomePage() {
                     "{testimonial.content}"
                   </p>
                   <div>
-                    <div className="font-sans text-sm font-semibold text-foreground">
+                    <div className="text-sm font-semibold text-foreground">
                       {testimonial.name}
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -554,7 +559,7 @@ export default function HomePage() {
       {/* CTA Section */}
       <section className="px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
         <div className="mx-auto max-w-4xl text-center">
-          <h2 className="font-sans text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
+          <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl text-balance">
             Ready to build your perfect resume?
           </h2>
           <p className="mt-4 text-lg text-muted-foreground text-pretty">
@@ -583,7 +588,7 @@ export default function HomePage() {
             <div>
               <div className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-primary" />
-                <span className="font-sans text-lg font-semibold text-foreground">
+                <span className="text-lg font-semibold text-foreground">
                   OpenWork
                 </span>
               </div>
@@ -592,9 +597,7 @@ export default function HomePage() {
               </p>
             </div>
             <div>
-              <h3 className="font-sans text-sm font-semibold text-foreground">
-                Product
-              </h3>
+              <h3 className="text-sm font-semibold text-foreground">Product</h3>
               <ul className="mt-4 space-y-2">
                 <li>
                   <a
@@ -623,9 +626,7 @@ export default function HomePage() {
               </ul>
             </div>
             <div>
-              <h3 className="font-sans text-sm font-semibold text-foreground">
-                Company
-              </h3>
+              <h3 className="text-sm font-semibold text-foreground">Company</h3>
               <ul className="mt-4 space-y-2">
                 <li>
                   <a
@@ -654,9 +655,7 @@ export default function HomePage() {
               </ul>
             </div>
             <div>
-              <h3 className="font-sans text-sm font-semibold text-foreground">
-                Legal
-              </h3>
+              <h3 className="text-sm font-semibold text-foreground">Legal</h3>
               <ul className="mt-4 space-y-2">
                 <li>
                   <a
