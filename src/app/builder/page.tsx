@@ -1490,6 +1490,22 @@ export default function BuilderPage() {
   };
 
   const getFragmentOpacity = (fragment: FragmentName) => {
+    // In preview mode, check if fragment is complete - incomplete fragments should be dimmed
+    if (isPreviewMode) {
+      const fragmentKeyMap: Record<FragmentName, keyof typeof stepCompletion> = {
+        "name": "name",
+        "contact": "contact",
+        "summary": "summary",
+        "experience-header": "experience",
+        "experience-bullets": "experience-bullets",
+        "education": "education",
+        "skills": "skills",
+      };
+      const key = fragmentKeyMap[fragment];
+      const isComplete = stepCompletion[key] ?? false;
+      return isComplete ? "opacity-100" : "opacity-50";
+    }
+    
     const fragmentOrder: FragmentName[] = [
       "name",
       "contact",
@@ -1515,35 +1531,46 @@ export default function BuilderPage() {
       if (!isPreviewMode) fn();
     };
 
-    const hasFirst = hasText(resume.personal.firstName);
-    const hasLast = hasText(resume.personal.lastName);
+    const fullName =
+      `${resume.personal.firstName} ${resume.personal.lastName}`.trim();
     const headline =
       resume.personal.headline?.trim() || resume.experience[0]?.position || "";
-    const hasHeadline = Boolean(headline);
-    const hasSummary = !!resume.personal.summary;
-    const contactSegments = [
-      {
-        value: resume.personal.location?.trim(),
-        placeholder: "Location",
-      },
-      {
-        value: resume.personal.email?.trim(),
-        placeholder: "Email",
-      },
-      {
-        value: resume.personal.phone?.trim(),
-        placeholder: "Phone",
-      },
-      {
-        value: resume.personal.linkedin?.trim(),
-        placeholder: "LinkedIn",
-      },
-    ].filter((segment) => segment.value || segment.placeholder);
+    
+    const contactItems = [
+      resume.personal.location?.trim(),
+      resume.personal.email?.trim(),
+      resume.personal.phone?.trim(),
+      resume.personal.linkedin?.trim(),
+    ].filter(Boolean);
+
+    const hasExperience = resume.experience.some(
+      (exp) => exp.company || exp.position,
+    );
+    const hasEducation = resume.education.some(
+      (edu) => edu.institution || edu.degree,
+    );
+    const hasSkills =
+      (resume.skills.technical?.length ?? 0) > 0 ||
+      (resume.skills.languages?.length ?? 0) > 0;
+
+    // Use PDF-style fixed sizes only when layout is "standard", otherwise use layoutConfig
+    const usePDFStyle = layoutConfig.id === "standard";
+    const baseFontSize = usePDFStyle ? 10 : layoutConfig.fontSize;
+    const nameSize = usePDFStyle ? 28 : layoutConfig.headerSize;
+    const headlineSize = usePDFStyle ? 12 : layoutConfig.roleSize;
+    const sectionHeaderSize = usePDFStyle ? 11 : layoutConfig.sectionHeaderSize;
+    const companySize = usePDFStyle ? 11 : baseFontSize + 1;
+    const positionSize = usePDFStyle ? 10 : baseFontSize;
+    const dateSize = usePDFStyle ? 9 : baseFontSize - 1;
+    const bulletSize = usePDFStyle ? 9 : baseFontSize - 1;
+    const padding = usePDFStyle ? 20 : layoutConfig.padding;
+    const sectionMargin = usePDFStyle ? 16 : layoutConfig.sectionMargin;
+    const itemMargin = usePDFStyle ? 12 : layoutConfig.itemMargin;
 
     return (
       <div
         ref={resumeContainerRef}
-        className="bg-card text-card-foreground shadow-2xl relative"
+        className="bg-card shadow-2xl relative"
         style={{
           // A4 dimensions: 210mm × 297mm
           width: "210mm",
@@ -1554,14 +1581,15 @@ export default function BuilderPage() {
       >
         <div
           ref={contentRef}
-          className="w-full"
+          className="w-full text-foreground"
           style={{
-            padding: `${layoutConfig.padding}mm`,
-            lineHeight: layoutConfig.lineHeight,
-            fontSize: `${layoutConfig.fontSize}pt`,
+            padding: `${padding}mm`,
+            lineHeight: usePDFStyle ? 1.5 : layoutConfig.lineHeight,
+            fontSize: `${baseFontSize}pt`,
+            fontFamily: "Inter, sans-serif",
           }}
         >
-          {/* Header - Left Aligned Name */}
+          {/* Header - Matching PDF style */}
           <motion.div
             ref={setFragmentRef("name")}
             onClick={() => handleFragmentClick(() => jumpToSection("name"))}
@@ -1569,45 +1597,60 @@ export default function BuilderPage() {
               scale: isFragmentActive("name") ? 1.02 : 1,
             }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
-            style={{ marginBottom: layoutConfig.sectionMargin / 3 + "px" }}
+            style={{ marginBottom: 16 }}
             className={`transition-all duration-300 rounded-lg -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("name")} ${
               isFragmentActive("name")
                 ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
                 : ""
             }`}
           >
-            <h1
-              className="font-bold tracking-wide uppercase leading-tight"
-              style={{ fontSize: `${layoutConfig.headerSize}pt` }}
-            >
-              <span
-                className={
-                  hasFirst
-                    ? "text-foreground"
-                    : "text-muted-foreground/50 inline-block"
-                }
+            {fullName ? (
+              <h1
+                className="font-bold text-foreground"
+                style={{ 
+                  fontSize: `${nameSize}pt`,
+                  marginBottom: 4,
+                }}
               >
-                {resume.personal.firstName || "First"}
-              </span>{" "}
-              <span
-                className={
-                  hasLast
-                    ? "text-foreground"
-                    : "text-muted-foreground/50 inline-block"
-                }
+                {fullName}
+              </h1>
+            ) : (
+              <h1
+                className="font-bold text-muted-foreground/60"
+                style={{ 
+                  fontSize: `${nameSize}pt`,
+                  marginBottom: 4,
+                }}
               >
-                {resume.personal.lastName || "Last"}
-              </span>
-            </h1>
-            <h2
-              className={`font-semibold tracking-widest uppercase mt-1 ${hasHeadline ? "text-foreground" : "text-muted-foreground/50"}`}
-              style={{ fontSize: `${layoutConfig.roleSize}pt` }}
-            >
-              {headline || "Job Title"}
-            </h2>
+                First Name Last Name
+              </h1>
+            )}
+            {headline ? (
+              <h2
+                className="font-bold uppercase text-foreground"
+                style={{
+                  fontSize: `${headlineSize}pt`,
+                  marginBottom: 6,
+                  letterSpacing: 1,
+                }}
+              >
+                {headline}
+              </h2>
+            ) : (
+              <h2
+                className="font-bold uppercase text-muted-foreground/60"
+                style={{
+                  fontSize: `${headlineSize}pt`,
+                  marginBottom: 6,
+                  letterSpacing: 1,
+                }}
+              >
+                Job Title / Headline
+              </h2>
+            )}
           </motion.div>
 
-          {/* Contact Info */}
+          {/* Contact Info - Matching PDF style */}
           <motion.div
             ref={setFragmentRef("contact")}
             onClick={() => handleFragmentClick(() => jumpToSection("contact"))}
@@ -1615,43 +1658,46 @@ export default function BuilderPage() {
               scale: isFragmentActive("contact") ? 1.02 : 1,
             }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
-            style={{
-              marginBottom: layoutConfig.sectionMargin + "px",
-              fontSize: `${layoutConfig.fontSize}pt`,
-            }}
+            style={{ marginBottom: sectionMargin }}
             className={`transition-all duration-300 rounded-lg py-1 -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("contact")} ${
               isFragmentActive("contact")
                 ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
                 : ""
             }`}
           >
-            <p className="flex flex-wrap items-center leading-relaxed">
-              {contactSegments.map((segment, idx) => {
-                const filled = hasText(segment.value);
-                return (
+            {contactItems.length > 0 ? (
+              <div
+                className="flex flex-wrap items-center text-muted-foreground"
+                style={{
+                  fontSize: `${dateSize}pt`,
+                  gap: 8,
+                }}
+              >
+                {contactItems.map((item, idx) => (
                   <span key={idx} className="flex items-center">
-                    {idx > 0 && <span className="mx-2 text-foreground">|</span>}
-                    <span
-                      className={
-                        filled
-                          ? "text-foreground"
-                          : "text-muted-foreground/50 italic"
-                      }
-                    >
-                      {segment.value || segment.placeholder}
-                    </span>
+                    {idx > 0 && (
+                      <span className="text-muted-foreground/60" style={{ margin: "0 4px" }}>
+                        {" | "}
+                      </span>
+                    )}
+                    <span>{item}</span>
                   </span>
-                );
-              })}
-            </p>
+                ))}
+              </div>
+            ) : (
+              <div
+                className="flex flex-wrap items-center text-muted-foreground/60"
+                style={{
+                  fontSize: `${dateSize}pt`,
+                  gap: 8,
+                }}
+              >
+                Location | Email | Phone | LinkedIn
+              </div>
+            )}
           </motion.div>
 
-          <div
-            className="border-b-2 border-black"
-            style={{ marginBottom: layoutConfig.sectionMargin + "px" }}
-          />
-
-          {/* Summary */}
+          {/* Summary - Always show with placeholder if empty */}
           <motion.div
             ref={setFragmentRef("summary")}
             onClick={() => handleFragmentClick(() => jumpToSection("summary"))}
@@ -1659,7 +1705,7 @@ export default function BuilderPage() {
               scale: isFragmentActive("summary") ? 1.02 : 1,
             }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
-            style={{ marginBottom: layoutConfig.sectionMargin + "px" }}
+            style={{ marginBottom: sectionMargin }}
             className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("summary")} ${
               isFragmentActive("summary")
                 ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
@@ -1667,318 +1713,323 @@ export default function BuilderPage() {
             }`}
           >
             <h3
-              className="font-bold tracking-wider text-foreground uppercase border-b border-black pb-1"
+              className="font-bold uppercase text-foreground border-b border-border"
               style={{
-                fontSize: `${layoutConfig.sectionHeaderSize}pt`,
-                marginBottom: layoutConfig.itemMargin + "px",
+                fontSize: `${sectionHeaderSize}pt`,
+                marginBottom: 8,
+                paddingBottom: 4,
+                letterSpacing: 1,
               }}
             >
-              SUMMARY
+              Summary
             </h3>
-            {hasSummary ? (
-              <p className="leading-relaxed text-foreground">
+            {resume.personal.summary ? (
+              <p
+                className="text-foreground"
+                style={{
+                  fontSize: `${baseFontSize}pt`,
+                  lineHeight: 1.5,
+                }}
+              >
                 {resume.personal.summary}
               </p>
             ) : (
-              <p className="leading-relaxed text-muted-foreground/50 italic border-b border-dashed border-muted-foreground/20 pb-2">
-                Your professional summary will appear here...
+              <p
+                className="text-muted-foreground/60"
+                style={{
+                  fontSize: `${baseFontSize}pt`,
+                  lineHeight: 1.5,
+                }}
+              >
+                Write 2-3 sentences about your professional background, key skills, and what you're looking for...
               </p>
             )}
           </motion.div>
 
-          {/* Experience */}
+          {/* Experience - Always show with placeholder if empty */}
           <div
             className={`transition-opacity duration-300 ${getFragmentOpacity("experience-header")}`}
-            style={{ marginBottom: layoutConfig.sectionMargin + "px" }}
+            style={{ marginBottom: sectionMargin }}
           >
             <h3
-              className="font-bold tracking-wider text-foreground uppercase border-b border-black pb-1"
+              className="font-bold uppercase text-foreground border-b border-border"
               style={{
-                fontSize: `${layoutConfig.sectionHeaderSize}pt`,
-                marginBottom: layoutConfig.itemMargin + "px",
+                fontSize: `${sectionHeaderSize}pt`,
+                marginBottom: 8,
+                paddingBottom: 4,
+                letterSpacing: 1,
               }}
             >
-              PROFESSIONAL EXPERIENCE
+              Professional Experience
             </h3>
-            <div
-              style={{
-                gap: layoutConfig.itemMargin + "px",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              {resume.experience.map((exp, idx) => {
-                const isCurrentExp = idx === currentExpIndex;
-                const hasContent = hasExperienceData(exp);
+            {hasExperience ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: itemMargin }}>
+                {resume.experience.map((exp, idx) => {
+                  const isCurrentExp = idx === currentExpIndex;
+                  const hasContent = hasExperienceData(exp);
 
-                if (!hasContent && idx > 0) return null;
+                  if (!hasContent && idx > 0) return null;
+                  if (!exp.company && !exp.position) return null;
 
-                return (
-                  <div key={exp.id}>
-                    <motion.div
-                      ref={
-                        isCurrentExp
-                          ? setFragmentRef(`experience-header-${idx}`)
-                          : undefined
-                      }
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleFragmentClick(() =>
-                          jumpToSection("experience-header", idx),
-                        );
-                      }}
-                      animate={{
-                        scale:
+                  return (
+                    <div key={exp.id} style={{ marginBottom: itemMargin }}>
+                      <motion.div
+                        ref={
+                          isCurrentExp
+                            ? setFragmentRef(`experience-header-${idx}`)
+                            : undefined
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFragmentClick(() =>
+                            jumpToSection("experience-header", idx),
+                          );
+                        }}
+                        animate={{
+                          scale:
+                            isFragmentActive("experience-header") && isCurrentExp
+                              ? 1.02
+                              : 1,
+                        }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 240,
+                          damping: 24,
+                        }}
+                        className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${
                           isFragmentActive("experience-header") && isCurrentExp
-                            ? 1.02
-                            : 1,
-                      }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 240,
-                        damping: 24,
-                      }}
-                      className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${
-                        isFragmentActive("experience-header") && isCurrentExp
-                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                          : ""
-                      } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
-                    >
-                      <div className="flex justify-between items-baseline mb-1">
-                        <p className="font-bold">
-                          <span
-                            className={
-                              hasText(exp.position)
-                                ? "text-foreground"
-                                : "text-muted-foreground/50"
-                            }
-                          >
-                            {exp.position || "Position"}
-                          </span>
-                          <span className="text-muted-foreground/40">, </span>
-                          <span
-                            className={
-                              hasText(exp.company)
-                                ? "text-foreground"
-                                : "text-muted-foreground/50"
-                            }
-                          >
-                            {exp.company || "Company"}
-                          </span>
-                        </p>
-                        <p className="font-bold whitespace-nowrap ml-4">
-                          <span
-                            className={
-                              hasText(exp.startDate)
-                                ? "text-foreground"
-                                : "text-muted-foreground/50"
-                            }
-                          >
-                            {hasText(exp.startDate)
-                              ? formatDateValue(exp.startDate)
-                              : "Start"}
-                          </span>
-                          <span className="mx-1 text-muted-foreground/50">
-                            -
-                          </span>
-                          <span
-                            className={
-                              exp.current || hasText(exp.endDate)
-                                ? "text-foreground"
-                                : "text-muted-foreground/50"
-                            }
-                          >
-                            {exp.current
-                              ? "Present"
-                              : hasText(exp.endDate)
-                                ? formatDateValue(exp.endDate)
-                                : "End"}
-                          </span>
-                        </p>
-                      </div>
-                      <p className="mb-1">
-                        <span
-                          className={
-                            hasText(exp.location)
-                              ? "text-foreground"
-                              : "text-muted-foreground/50 italic"
-                          }
+                            ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                            : ""
+                        } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginBottom: 2,
+                          }}
                         >
-                          {exp.location || "Location"}
-                        </span>
-                      </p>
-                    </motion.div>
-
-                    <motion.div
-                      ref={
-                        isCurrentExp
-                          ? setFragmentRef(`experience-bullets-${idx}`)
-                          : undefined
-                      }
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleFragmentClick(() =>
-                          jumpToSection("experience-bullets", idx),
-                        );
-                      }}
-                      animate={{
-                        scale:
-                          isFragmentActive("experience-bullets") && isCurrentExp
-                            ? 1.02
-                            : 1,
-                      }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 240,
-                        damping: 24,
-                      }}
-                      className={`mt-1 transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${
-                        isFragmentActive("experience-bullets") && isCurrentExp
-                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                          : ""
-                      }`}
-                    >
-                      {exp.description.length > 0 ? (
-                        <ul className="list-disc list-outside ml-4 space-y-1">
-                          {exp.description.map((bullet, bulletIdx) => (
-                            <li
-                              key={bulletIdx}
-                              className="leading-relaxed text-foreground"
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            {exp.company && (
+                              <p
+                                className="font-bold text-foreground"
+                                style={{
+                                  fontSize: `${companySize}pt`,
+                                }}
+                              >
+                                {exp.company}
+                              </p>
+                            )}
+                            {exp.position && (
+                              <p
+                                className="text-muted-foreground"
+                                style={{
+                                  fontSize: `${positionSize}pt`,
+                                }}
+                              >
+                                {exp.position}
+                              </p>
+                            )}
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <p
+                              className="text-muted-foreground"
+                              style={{
+                                fontSize: `${dateSize}pt`,
+                              }}
                             >
-                              {bullet}
-                            </li>
+                              {formatDateValue(exp.startDate)}
+                              {exp.startDate && " - "}
+                              {exp.current ? "Present" : formatDateValue(exp.endDate)}
+                            </p>
+                            {exp.location && (
+                              <p
+                                className="text-muted-foreground"
+                                style={{
+                                  fontSize: `${dateSize}pt`,
+                                }}
+                              >
+                                {exp.location}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+
+                      {exp.description.length > 0 && (
+                        <motion.div
+                          ref={
+                            isCurrentExp
+                              ? setFragmentRef(`experience-bullets-${idx}`)
+                              : undefined
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleFragmentClick(() =>
+                              jumpToSection("experience-bullets", idx),
+                            );
+                          }}
+                          animate={{
+                            scale:
+                              isFragmentActive("experience-bullets") && isCurrentExp
+                                ? 1.02
+                                : 1,
+                          }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 240,
+                            damping: 24,
+                          }}
+                          style={{ marginTop: 4, paddingLeft: 12 }}
+                          className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${
+                            isFragmentActive("experience-bullets") && isCurrentExp
+                              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                              : ""
+                          }`}
+                        >
+                          {exp.description.map((bullet, bulletIdx) => (
+                            <div
+                              key={bulletIdx}
+                              style={{
+                                display: "flex",
+                                flexDirection: "row",
+                                marginBottom: 2,
+                              }}
+                            >
+                              <span
+                                className="text-muted-foreground"
+                                style={{
+                                  width: 8,
+                                  fontSize: `${baseFontSize}pt`,
+                                }}
+                              >
+                                •
+                              </span>
+                              <span
+                                className="text-foreground"
+                                style={{
+                                  flex: 1,
+                                  fontSize: `${bulletSize}pt`,
+                                  lineHeight: 1.4,
+                                }}
+                              >
+                                {bullet}
+                              </span>
+                            </div>
                           ))}
-                        </ul>
-                      ) : (
-                        <p className="text-muted-foreground/50 italic ml-4">
-                          • Add your achievements and responsibilities...
-                        </p>
+                        </motion.div>
                       )}
-                    </motion.div>
-                  </div>
-                );
-              })}
-            </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p
+                className="text-muted-foreground/60"
+                style={{
+                  fontSize: `${baseFontSize}pt`,
+                  lineHeight: 1.5,
+                }}
+              >
+                Company | Position | Start Date - End Date | Location
+              </p>
+            )}
           </div>
 
-          {/* Education */}
-          <motion.div
-            animate={{
-              scale: isFragmentActive("education") ? 1.02 : 1,
-            }}
-            transition={{ type: "spring", stiffness: 240, damping: 24 }}
-            style={{ marginBottom: layoutConfig.sectionMargin + "px" }}
-            className={`transition-all duration-300 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -mx-2 ${getFragmentOpacity("education")} ${
-              isFragmentActive("education")
-                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                : ""
-            }`}
+          {/* Education - Always show with placeholder if empty */}
+          <div
+            className={`transition-opacity duration-300 ${getFragmentOpacity("education")}`}
+            style={{ marginBottom: sectionMargin }}
           >
             <h3
-              className="font-bold tracking-wider text-foreground uppercase border-b border-black pb-1"
+              className="font-bold uppercase text-foreground border-b border-border"
               style={{
-                fontSize: `${layoutConfig.sectionHeaderSize}pt`,
-                marginBottom: layoutConfig.itemMargin + "px",
+                fontSize: `${sectionHeaderSize}pt`,
+                marginBottom: 8,
+                paddingBottom: 4,
+                letterSpacing: 1,
               }}
             >
-              EDUCATION
+              Education
             </h3>
-            <div
-              style={{
-                gap: layoutConfig.itemMargin + "px",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              {resume.education.map((edu, idx) => {
-                const hasDegree = hasText(edu.degree);
-                const hasField = hasText(edu.field);
-                const hasInstitution = hasText(edu.institution);
-                const hasContent = hasInstitution || hasDegree || hasField;
-                if (!hasContent && idx > 0) return null;
+            {hasEducation ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {resume.education.map((edu, idx) => {
+                  if (!edu.institution && !edu.degree) return null;
 
-                return (
-                  <div
-                    ref={
-                      isFragmentActive("education") && currentEduIndex === idx
-                        ? setFragmentRef(`education-${idx}`)
-                        : undefined
-                    }
-                    key={edu.id}
-                    className={`rounded-sm p-1 transition-colors ${!isPreviewMode ? "hover:bg-black/5 cursor-pointer" : ""}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleFragmentClick(() =>
-                        jumpToSection("education", idx),
-                      );
-                    }}
-                  >
-                    <div className="flex justify-between items-baseline mb-1">
-                      <p className="font-bold">
-                        <span
-                          className={
-                            hasDegree
-                              ? "text-foreground"
-                              : "text-muted-foreground/50"
-                          }
-                        >
-                          {edu.degree || "Degree"}
-                        </span>
-                        <span className="text-muted-foreground/40"> in </span>
-                        <span
-                          className={
-                            hasField
-                              ? "text-foreground"
-                              : "text-muted-foreground/50"
-                          }
-                        >
-                          {edu.field || "Field"}
-                        </span>
-                      </p>
-                      <p className="font-bold whitespace-nowrap ml-4">
-                        <span
-                          className={
-                            hasText(edu.startDate)
-                              ? "text-foreground"
-                              : "text-muted-foreground/50"
-                          }
-                        >
-                          {hasText(edu.startDate)
-                            ? formatDateValue(edu.startDate)
-                            : "Start"}
-                        </span>
-                        <span className="mx-1 text-muted-foreground/50">-</span>
-                        <span
-                          className={
-                            hasText(edu.endDate)
-                              ? "text-foreground"
-                              : "text-muted-foreground/50"
-                          }
-                        >
-                          {hasText(edu.endDate)
-                            ? formatDateValue(edu.endDate)
-                            : "End"}
-                        </span>
-                      </p>
-                    </div>
-                    <p>
-                      <span
-                        className={
-                          hasInstitution
-                            ? "text-foreground"
-                            : "text-muted-foreground/50"
-                        }
+                  return (
+                    <div
+                      ref={
+                        isFragmentActive("education") && currentEduIndex === idx
+                          ? setFragmentRef(`education-${idx}`)
+                          : undefined
+                      }
+                      key={edu.id}
+                      style={{ marginBottom: 8 }}
+                      className={`rounded-sm p-1 transition-colors ${!isPreviewMode ? "hover:bg-primary/5 cursor-pointer" : ""}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleFragmentClick(() =>
+                          jumpToSection("education", idx),
+                        );
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
                       >
-                        {edu.institution || "Institution"}
-                      </span>
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
+                        <div>
+                          {edu.institution && (
+                            <p
+                              className="font-bold text-foreground"
+                              style={{
+                                fontSize: `${companySize}pt`,
+                              }}
+                            >
+                              {edu.institution}
+                            </p>
+                          )}
+                          <p
+                            className="text-foreground"
+                            style={{
+                              fontSize: `${positionSize}pt`,
+                            }}
+                          >
+                            {[edu.degree, edu.field].filter(Boolean).join(" in ")}
+                          </p>
+                        </div>
+                        <p
+                          className={`text-muted-foreground ${isPreviewMode && (formatDateValue(edu.startDate) === "Select date" || formatDateValue(edu.endDate) === "Select date") ? "opacity-50" : ""}`}
+                          style={{
+                            fontSize: `${dateSize}pt`,
+                            textAlign: "right",
+                          }}
+                        >
+                          {formatDateValue(edu.startDate)}
+                          {edu.startDate && edu.endDate && " - "}
+                          {formatDateValue(edu.endDate)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p
+                className="text-muted-foreground/60"
+                style={{
+                  fontSize: `${baseFontSize}pt`,
+                  lineHeight: 1.5,
+                }}
+              >
+                Institution | Degree | Field | Start Date - End Date
+              </p>
+            )}
+          </div>
 
-          {/* Skills */}
+          {/* Skills - Always show with placeholder if empty */}
           <motion.div
             ref={setFragmentRef("skills")}
             onClick={() => handleFragmentClick(() => jumpToSection("skills"))}
@@ -1986,61 +2037,86 @@ export default function BuilderPage() {
               scale: isFragmentActive("skills") ? 1.02 : 1,
             }}
             transition={{ type: "spring", stiffness: 240, damping: 24 }}
-            className={`grid grid-cols-3 gap-8 transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${
+            style={{ marginBottom: sectionMargin }}
+            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${
               isFragmentActive("skills")
                 ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
                 : ""
             }`}
           >
-            <div>
-              <h3
-                className="font-bold tracking-wider text-foreground uppercase border-b border-black pb-1"
+            <h3
+              className="font-bold uppercase text-foreground border-b border-border"
+              style={{
+                fontSize: `${sectionHeaderSize}pt`,
+                marginBottom: 8,
+                paddingBottom: 4,
+                letterSpacing: 1,
+              }}
+            >
+              Skills
+            </h3>
+            {hasSkills ? (
+              <div
                 style={{
-                  fontSize: `${layoutConfig.sectionHeaderSize}pt`,
-                  marginBottom: layoutConfig.itemMargin + "px",
+                  display: "flex",
+                  flexDirection: "row",
+                  gap: 24,
                 }}
               >
-                LANGUAGES
-              </h3>
-              <div className="space-y-1">
-                {resume.skills.languages?.length ? (
-                  <ul className="list-none space-y-1">
-                    {resume.skills.languages.map((lang, idx) => (
-                      <li key={idx} className="text-foreground">
-                        {lang}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-muted-foreground/50 italic">
-                    Add languages...
-                  </p>
+                {(resume.skills.languages?.length ?? 0) > 0 && (
+                  <div style={{ flex: 1 }}>
+                    <p
+                      className="font-bold text-foreground"
+                      style={{
+                        fontSize: `${baseFontSize}pt`,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Languages
+                    </p>
+                    <p
+                      className="text-foreground"
+                      style={{
+                        fontSize: `${dateSize}pt`,
+                      }}
+                    >
+                      {resume.skills.languages?.join(", ")}
+                    </p>
+                  </div>
+                )}
+                {(resume.skills.technical?.length ?? 0) > 0 && (
+                  <div style={{ flex: 1 }}>
+                    <p
+                      className="font-bold text-foreground"
+                      style={{
+                        fontSize: `${baseFontSize}pt`,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Technical Skills
+                    </p>
+                    <p
+                      className="text-foreground"
+                      style={{
+                        fontSize: `${dateSize}pt`,
+                      }}
+                    >
+                      {resume.skills.technical?.join(", ")}
+                    </p>
+                  </div>
                 )}
               </div>
-            </div>
-
-            <div className="col-span-2">
-              <h3
-                className="font-bold tracking-wider text-foreground uppercase border-b border-black pb-1"
+            ) : (
+              <p
+                className="text-muted-foreground/60"
                 style={{
-                  fontSize: `${layoutConfig.sectionHeaderSize}pt`,
-                  marginBottom: layoutConfig.itemMargin + "px",
+                  fontSize: `${baseFontSize}pt`,
+                  lineHeight: 1.5,
                 }}
               >
-                SKILLS
-              </h3>
-              {resume.skills.technical?.length ? (
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                  {resume.skills.technical.map((skill, idx) => (
-                    <div key={idx} className="text-foreground">
-                      {skill}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground/50 italic">Add skills...</p>
-              )}
-            </div>
+                Languages | Technical Skills
+              </p>
+            )}
           </motion.div>
         </div>
       </div>
