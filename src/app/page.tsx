@@ -19,6 +19,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/navbar";
+import { toast } from "sonner";
 
 export default function HomePage() {
   const router = useRouter();
@@ -64,15 +65,7 @@ export default function HomePage() {
     ];
 
     if (!validTypes.includes(file.type)) {
-      alert("Please upload a PDF, DOCX, PNG, or JPEG file");
-      return;
-    }
-
-    // Only images are supported for now
-    if (!file.type.startsWith("image/")) {
-      alert(
-        "Currently only image files are supported. PDF and DOCX support coming soon!",
-      );
+      toast("Please upload a PDF, DOCX, PNG, or JPEG file");
       return;
     }
 
@@ -115,41 +108,30 @@ export default function HomePage() {
 
       setUploadStatus("Parsing resume data...");
 
-      // Save the MetaResume data as a cookie
-      // Using a 1-hour expiration
-      const expires = new Date();
-      expires.setTime(expires.getTime() + 60 * 60 * 1000); // 1 hour
-
-      const cookieValue = encodeURIComponent(JSON.stringify(data.data));
-      const cookieSize = cookieValue.length;
-      
-      // Warn if cookie is approaching size limit (4KB)
-      if (cookieSize > 3500) {
-        console.warn(`Cookie size is ${cookieSize} bytes, approaching 4KB limit`);
+      // Save the MetaResume data to localStorage
+      try {
+        const resumeData = JSON.stringify(data.data);
+        localStorage.setItem("resume_upload", resumeData);
+        console.log("Resume data saved to localStorage successfully");
+      } catch (error) {
+        console.error("Failed to save resume data to localStorage:", error);
+        if (error instanceof DOMException && error.name === "QuotaExceededError") {
+          throw new Error("Storage quota exceeded. Please clear some data and try again.");
+        }
+        throw new Error("Failed to save resume data. Please try again.");
       }
-
-      document.cookie = `resume_upload=${cookieValue}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
-      
-      // Verify cookie was set
-      const cookieSet = document.cookie.includes("resume_upload=");
-      if (!cookieSet) {
-        console.error("Failed to set cookie, cookie size may be too large");
-        throw new Error("Failed to save resume data. Data may be too large.");
-      }
-
-      console.log("Cookie set successfully, size:", cookieSize, "bytes");
 
       setUploadStatus("Success! Redirecting to builder...");
 
-      // Redirect to builder page after a short delay to ensure cookie is set
+      // Redirect to builder page
       setTimeout(() => {
         router.push("/builder");
-      }, 1000);
+      }, 500);
     } catch (error) {
       console.error("Upload error:", error);
       setIsUploading(false);
       setUploadStatus("");
-      alert(
+      toast.error(
         error instanceof Error
           ? `Upload failed: ${error.message}`
           : "Upload failed. Please try again.",
