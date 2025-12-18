@@ -33,7 +33,7 @@ export function Navbar({ progress, onReset, onPreview }: NavbarProps) {
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2">
               <FileText className="h-6 w-6 text-primary" />
-              <span className="font-sans text-xl font-semibold text-foreground">
+              <span className="text-xl font-semibold text-foreground">
                 OpenWork
               </span>
             </Link>

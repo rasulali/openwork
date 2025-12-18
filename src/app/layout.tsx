@@ -1,14 +1,14 @@
 import type React from "react";
 import type { Metadata } from "next";
-import { Karla } from "next/font/google";
+import localFont from "next/font/local";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 
-const karla = Karla({
-  subsets: ["latin"],
-  variable: "--font-sans",
+const inter = localFont({
+  src: "../../public/inter.ttf",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -24,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${karla.variable} antialiased`}>
+      <body className={`${inter.className} antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
