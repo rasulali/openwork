@@ -45,6 +45,7 @@ import {
   Briefcase,
   GraduationCap,
   Wrench,
+  Eye,
 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { getLocalStorage, removeLocalStorage } from "@/utils/localStorage";
@@ -215,15 +216,15 @@ const VIEWPORT_PADDING = 0.85; // Use 85% of viewport for the fragment
 // Auto-Scaling Layout Configuration
 type LayoutConfig = {
   id: string;
-  fontSize: number;          // Base font size in pt (e.g. 10)
-  headerSize: number;        // Name font size in pt (e.g. 28)
-  roleSize: number;          // Role font size in pt (e.g. 12)
+  fontSize: number; // Base font size in pt (e.g. 10)
+  headerSize: number; // Name font size in pt (e.g. 28)
+  roleSize: number; // Role font size in pt (e.g. 12)
   sectionHeaderSize: number; // Section title size in pt (e.g. 11)
-  sectionMargin: number;     // Margin bottom for sections in px
-  itemMargin: number;        // Margin bottom for items in px
-  lineHeight: number;        // CSS line-height unitless
-  padding: number;           // Page padding in mm
-  gap: number;               // Gap between elements in px
+  sectionMargin: number; // Margin bottom for sections in px
+  itemMargin: number; // Margin bottom for items in px
+  lineHeight: number; // CSS line-height unitless
+  padding: number; // Page padding in mm
+  gap: number; // Gap between elements in px
 };
 
 const DENSITY_PRESETS: LayoutConfig[] = [
@@ -234,9 +235,9 @@ const DENSITY_PRESETS: LayoutConfig[] = [
     roleSize: 12,
     sectionHeaderSize: 11,
     sectionMargin: 24, // mb-6
-    itemMargin: 8,     // space-y-2 -> ~8px
-    lineHeight: 1.5,   // leading-relaxed
-    padding: 20,       // 20mm
+    itemMargin: 8, // space-y-2 -> ~8px
+    lineHeight: 1.5, // leading-relaxed
+    padding: 20, // 20mm
     gap: 8,
   },
   {
@@ -597,10 +598,15 @@ export default function BuilderPage() {
           setLayoutConfig(DENSITY_PRESETS[currentIndex + 1]);
         }
       } else {
-        // Current preset fits! 
-        // Only update minValidPresetIndex if auto-scaling is enabled (this is the settled state)
-        // OR if this is a better (less dense) option than what we currently have
-        if (isAutoScaling || currentIndex < minValidPresetIndex) {
+        // Current preset fits!
+        // Only update minValidPresetIndex in these cases:
+        // 1. Auto-scaling AND we started from Standard (index 0) - this is a fresh search
+        // 2. Manual mode AND this preset is less dense than current minimum
+        const shouldUpdateMin =
+          (isAutoScaling && !isAutoScalingSettled) || // Auto-scaling search in progress
+          (!isAutoScaling && currentIndex < minValidPresetIndex); // Manual found better option
+
+        if (shouldUpdateMin) {
           setMinValidPresetIndex(currentIndex);
         }
         setIsAutoScalingSettled(true);
@@ -621,13 +627,24 @@ export default function BuilderPage() {
   }, [layoutConfig, isAutoScaling, minValidPresetIndex]);
 
   // Helper to check if a preset is valid (fits within page)
-  const isPresetValid = useCallback((presetId: string) => {
-    const presetIndex = DENSITY_PRESETS.findIndex(p => p.id === presetId);
-    return presetIndex >= minValidPresetIndex;
-  }, [minValidPresetIndex]);
+  const isPresetValid = useCallback(
+    (presetId: string) => {
+      const presetIndex = DENSITY_PRESETS.findIndex((p) => p.id === presetId);
+      return presetIndex >= minValidPresetIndex;
+    },
+    [minValidPresetIndex],
+  );
+
+  // When Auto mode is enabled, reset to Standard to find the optimal preset
+  useEffect(() => {
+    if (isAutoScaling && layoutConfig.id !== "standard") {
+      // Reset to Standard and let the auto-scaling logic find the optimal preset
+      setLayoutConfig(DENSITY_PRESETS[0]);
+      setIsAutoScalingSettled(false);
+    }
+  }, [isAutoScaling]); // Only trigger when isAutoScaling changes
 
   // Reset to standard when content changes significantly, to allow re-optimization
-  // But DON'T reset when just switching to Auto mode
   useEffect(() => {
     if (!isAutoScaling) return;
 
@@ -645,8 +662,6 @@ export default function BuilderPage() {
     resume.education.length,
     resume.skills.technical?.length,
     resume.skills.languages?.length,
-    // Note: isAutoScaling is NOT in the dependency array anymore
-    // This prevents reset when just switching to Auto mode
   ]);
 
   const sectionDataFlags = useMemo<Record<SectionName, boolean>>(
@@ -654,9 +669,15 @@ export default function BuilderPage() {
       personal:
         hasText(resume.personal.firstName) || hasText(resume.personal.lastName),
       summary: hasText(resume.personal.summary),
-      experience: resume.experience.length > 0 && hasExperienceData(resume.experience[0]),
-      education: resume.education.length > 0 && (hasText(resume.education[0].institution) || hasText(resume.education[0].degree)),
-      skills: (resume.skills.languages?.length ?? 0) > 0 || (resume.skills.technical?.length ?? 0) > 0,
+      experience:
+        resume.experience.length > 0 && hasExperienceData(resume.experience[0]),
+      education:
+        resume.education.length > 0 &&
+        (hasText(resume.education[0].institution) ||
+          hasText(resume.education[0].degree)),
+      skills:
+        (resume.skills.languages?.length ?? 0) > 0 ||
+        (resume.skills.technical?.length ?? 0) > 0,
     }),
     [resume],
   );
@@ -1619,9 +1640,7 @@ export default function BuilderPage() {
                 const filled = hasText(segment.value);
                 return (
                   <span key={idx} className="flex items-center">
-                    {idx > 0 && (
-                      <span className="mx-2 text-foreground">|</span>
-                    )}
+                    {idx > 0 && <span className="mx-2 text-foreground">|</span>}
                     <span
                       className={
                         filled
@@ -1690,7 +1709,13 @@ export default function BuilderPage() {
             >
               PROFESSIONAL EXPERIENCE
             </h3>
-            <div style={{ gap: layoutConfig.itemMargin + "px", display: "flex", flexDirection: "column" }}>
+            <div
+              style={{
+                gap: layoutConfig.itemMargin + "px",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               {resume.experience.map((exp, idx) => {
                 const isCurrentExp = idx === currentExpIndex;
                 const hasContent = hasExperienceData(exp);
@@ -1707,7 +1732,9 @@ export default function BuilderPage() {
                       }
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleFragmentClick(() => jumpToSection("experience-header", idx));
+                        handleFragmentClick(() =>
+                          jumpToSection("experience-header", idx),
+                        );
                       }}
                       animate={{
                         scale:
@@ -1759,7 +1786,9 @@ export default function BuilderPage() {
                               ? formatDateValue(exp.startDate)
                               : "Start"}
                           </span>
-                          <span className="mx-1 text-muted-foreground/50">-</span>
+                          <span className="mx-1 text-muted-foreground/50">
+                            -
+                          </span>
                           <span
                             className={
                               exp.current || hasText(exp.endDate)
@@ -1796,7 +1825,9 @@ export default function BuilderPage() {
                       }
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleFragmentClick(() => jumpToSection("experience-bullets", idx));
+                        handleFragmentClick(() =>
+                          jumpToSection("experience-bullets", idx),
+                        );
                       }}
                       animate={{
                         scale:
@@ -1858,7 +1889,13 @@ export default function BuilderPage() {
             >
               EDUCATION
             </h3>
-            <div style={{ gap: layoutConfig.itemMargin + "px", display: "flex", flexDirection: "column" }}>
+            <div
+              style={{
+                gap: layoutConfig.itemMargin + "px",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               {resume.education.map((edu, idx) => {
                 const hasDegree = hasText(edu.degree);
                 const hasField = hasText(edu.field);
@@ -1877,7 +1914,9 @@ export default function BuilderPage() {
                     className={`rounded-sm p-1 transition-colors ${!isPreviewMode ? "hover:bg-black/5 cursor-pointer" : ""}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleFragmentClick(() => jumpToSection("education", idx));
+                      handleFragmentClick(() =>
+                        jumpToSection("education", idx),
+                      );
                     }}
                   >
                     <div className="flex justify-between items-baseline mb-1">
@@ -2004,9 +2043,7 @@ export default function BuilderPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-muted-foreground/50 italic">
-                  Add skills...
-                </p>
+                <p className="text-muted-foreground/50 italic">Add skills...</p>
               )}
             </div>
           </motion.div>
@@ -2124,6 +2161,16 @@ export default function BuilderPage() {
                     <RotateCcw className="h-4 w-4 mr-2" />
                     Reset All
                   </Button>
+
+                  <Button
+                    variant="default"
+                    className="w-full mt-2"
+                    size="sm"
+                    onClick={() => setIsPreviewMode(true)}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Preview
+                  </Button>
                 </div>
 
                 <div className="p-4 border-t text-xs text-muted-foreground">
@@ -2148,7 +2195,9 @@ export default function BuilderPage() {
                   </Button>
                   <div className="h-4 w-px bg-border mx-1" />
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground font-medium">Density:</span>
+                    <span className="text-muted-foreground font-medium">
+                      Density:
+                    </span>
                     <div className="flex bg-muted rounded-full p-1">
                       <button
                         onClick={() => setIsAutoScaling(true)}
@@ -2158,7 +2207,8 @@ export default function BuilderPage() {
                       </button>
                       {DENSITY_PRESETS.map((preset) => {
                         const isValid = isPresetValid(preset.id);
-                        const isSelected = !isAutoScaling && layoutConfig.id === preset.id;
+                        const isSelected =
+                          !isAutoScaling && layoutConfig.id === preset.id;
                         return (
                           <button
                             key={preset.id}
@@ -2176,7 +2226,8 @@ export default function BuilderPage() {
                                 : "text-muted-foreground/40 cursor-not-allowed"
                               }`}
                           >
-                            {preset.id.charAt(0).toUpperCase() + preset.id.slice(1).replace("-", " ")}
+                            {preset.id.charAt(0).toUpperCase() +
+                              preset.id.slice(1).replace("-", " ")}
                           </button>
                         );
                       })}
@@ -2193,7 +2244,15 @@ export default function BuilderPage() {
                 <div className="absolute inset-0 flex items-center justify-center p-8">
                   <motion.div
                     animate={{
-                      scale: isPreviewMode ? Math.min((previewContainerRef.current?.offsetHeight || 800) / 1123 * 0.95, 1) : zoomTransform.scale,
+                      scale: isPreviewMode
+                        ? Math.min(
+                          ((previewContainerRef.current?.offsetHeight ||
+                            800) /
+                            1123) *
+                          0.95,
+                          1,
+                        )
+                        : zoomTransform.scale,
                       y: isPreviewMode ? 0 : zoomTransform.yPixels,
                     }}
                     transition={{
@@ -2254,7 +2313,9 @@ export default function BuilderPage() {
                           disabled={false} // Always enabled to allow Finish
                           className="flex-1"
                         >
-                          {currentStep === STEPS.length - 1 ? "Preview" : "Next"}
+                          {currentStep === STEPS.length - 1
+                            ? "Preview"
+                            : "Next"}
                           {currentStep !== STEPS.length - 1 && (
                             <ChevronRight className="h-4 w-4 ml-1" />
                           )}
@@ -2276,6 +2337,7 @@ export default function BuilderPage() {
           <Navbar
             progress={progress}
             onReset={() => setResetDialogOpen(true)}
+            onPreview={() => setIsPreviewMode(true)}
           />
 
           {/* Reset Dialog (controlled) */}
@@ -2305,11 +2367,66 @@ export default function BuilderPage() {
             ref={previewContainerRef}
             className="flex-1 min-h-0 bg-muted/30 overflow-hidden relative"
           >
+            {/* Preview Toolbar - Only in Preview Mode (Mobile) */}
+            {isPreviewMode && (
+              <div className="absolute top-0 left-0 right-0 z-50 w-full flex items-center justify-between gap-2 bg-background/90 backdrop-blur-md border-b px-4 py-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setIsPreviewMode(false)}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Back
+                </Button>
+                <div className="flex items-center gap-1 bg-muted rounded-full p-1">
+                  <button
+                    onClick={() => setIsAutoScaling(true)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isAutoScaling ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground"}`}
+                  >
+                    Auto
+                  </button>
+                  {DENSITY_PRESETS.map((preset) => {
+                    const isValid = isPresetValid(preset.id);
+                    const isSelected =
+                      !isAutoScaling && layoutConfig.id === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        disabled={!isValid}
+                        onClick={() => {
+                          if (isValid) {
+                            setIsAutoScaling(false);
+                            setLayoutConfig(preset);
+                          }
+                        }}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isSelected
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : isValid
+                            ? "text-muted-foreground"
+                            : "text-muted-foreground/40"
+                          }`}
+                      >
+                        {preset.id.charAt(0).toUpperCase()}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <motion.div
                 animate={{
-                  scale: zoomTransform.scale,
-                  y: zoomTransform.yPixels,
+                  scale: isPreviewMode
+                    ? Math.min(
+                      ((previewContainerRef.current?.offsetWidth || 400) /
+                        794) *
+                      0.95,
+                      0.5,
+                    )
+                    : zoomTransform.scale,
+                  y: isPreviewMode ? 0 : zoomTransform.yPixels,
                 }}
                 transition={{
                   type: "spring",
@@ -2325,39 +2442,44 @@ export default function BuilderPage() {
             </div>
           </div>
 
-          {/* Gradient Fade */}
-          <div className="h-3 bg-linear-to-b from-muted/30 to-background shrink-0" />
+          {/* Form Area - Hidden in Preview Mode */}
+          {!isPreviewMode && (
+            <>
+              {/* Gradient Fade */}
+              <div className="h-3 bg-linear-to-b from-muted/30 to-background shrink-0" />
 
-          {/* Form Area */}
-          <div className="bg-background border-t py-4 px-2 shrink-0">
-            <div className="max-h-[35vh] overflow-y-auto mb-3 p-2">
-              {renderInputs()}
-            </div>
+              {/* Form Area */}
+              <div className="bg-background border-t py-4 px-2 shrink-0">
+                <div className="max-h-[35vh] overflow-y-auto mb-3 p-2">
+                  {renderInputs()}
+                </div>
 
-            <Separator className="mb-3" />
+                <Separator className="mb-3" />
 
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={handlePrevious}
-                disabled={currentStep === 0}
-                className="flex-1"
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Previous
-              </Button>
-              <Button
-                onClick={handleNext}
-                disabled={false}
-                className="flex-1"
-              >
-                {currentStep === STEPS.length - 1 ? "Preview" : "Next"}
-                {currentStep !== STEPS.length - 1 && (
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                )}
-              </Button>
-            </div>
-          </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={handlePrevious}
+                    disabled={currentStep === 0}
+                    className="flex-1"
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Previous
+                  </Button>
+                  <Button
+                    onClick={handleNext}
+                    disabled={false}
+                    className="flex-1"
+                  >
+                    {currentStep === STEPS.length - 1 ? "Preview" : "Next"}
+                    {currentStep !== STEPS.length - 1 && (
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

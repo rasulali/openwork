@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, RotateCcw } from "lucide-react";
+import { FileText, RotateCcw, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   NavigationMenu,
@@ -18,9 +18,11 @@ interface NavbarProps {
   progress?: number;
   /** Callback for reset action. When provided, shows reset button on mobile. */
   onReset?: () => void;
+  /** Callback for preview action. When provided, shows preview button on mobile. */
+  onPreview?: () => void;
 }
 
-export function Navbar({ progress, onReset }: NavbarProps) {
+export function Navbar({ progress, onReset, onPreview }: NavbarProps) {
   const isBuilderMode = progress !== undefined;
 
   return (
@@ -83,6 +85,11 @@ export function Navbar({ progress, onReset }: NavbarProps) {
                   {onReset && (
                     <Button variant="outline" size="icon" onClick={onReset}>
                       <RotateCcw />
+                    </Button>
+                  )}
+                  {onPreview && (
+                    <Button variant="default" size="icon" onClick={onPreview}>
+                      <Eye />
                     </Button>
                   )}
                   <ModeToggle />
