@@ -559,12 +559,45 @@ export default function BuilderPage() {
   );
   const [isAutoScaling, setIsAutoScaling] = useState(true);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [previewScale, setPreviewScale] = useState(0.7); // Default scale for preview mode
   // Track the minimum valid preset index (all presets from this index onward are valid)
   // This only gets updated when auto-scaling finds the first fitting preset
   const [minValidPresetIndex, setMinValidPresetIndex] = useState(0);
   // Track if we're currently in the middle of an auto-scaling search
   const [isAutoScalingSettled, setIsAutoScalingSettled] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Calculate preview scale when entering preview mode or when container resizes
+  useEffect(() => {
+    if (!isPreviewMode) return;
+
+    const calculatePreviewScale = () => {
+      const container = previewContainerRef.current;
+      if (!container) return;
+
+      // A4 height is 297mm = ~1123px at 96dpi
+      const a4Height = 1123;
+      const containerHeight = container.offsetHeight;
+      // Leave some padding (32px top/bottom)
+      const availableHeight = containerHeight - 64;
+      const scale = Math.min(availableHeight / a4Height, 1);
+      setPreviewScale(scale);
+    };
+
+    // Calculate after a short delay to allow layout to settle
+    const timeoutId = setTimeout(calculatePreviewScale, 50);
+
+    // Also recalculate on resize
+    const resizeObserver = new ResizeObserver(calculatePreviewScale);
+    if (previewContainerRef.current) {
+      resizeObserver.observe(previewContainerRef.current);
+    }
+
+    return () => {
+      clearTimeout(timeoutId);
+      resizeObserver.disconnect();
+    };
+  }, [isPreviewMode]);
 
   // Auto-Scaling Logic
   useEffect(() => {
@@ -1583,7 +1616,7 @@ export default function BuilderPage() {
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
             style={{ marginBottom: layoutConfig.sectionMargin / 3 + "px" }}
             className={`transition-all duration-300 rounded-lg -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("name")} ${isFragmentActive("name")
-              ? "ring-2 ring-primary ring-offset-4 rounded-sm"
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
               : ""
               }`}
           >
@@ -1631,7 +1664,7 @@ export default function BuilderPage() {
               fontSize: `${layoutConfig.fontSize}pt`,
             }}
             className={`transition-all duration-300 rounded-lg py-1 -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("contact")} ${isFragmentActive("contact")
-              ? "ring-2 ring-primary ring-offset-4 rounded-sm"
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
               : ""
               }`}
           >
@@ -1671,7 +1704,7 @@ export default function BuilderPage() {
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
             style={{ marginBottom: layoutConfig.sectionMargin + "px" }}
             className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("summary")} ${isFragmentActive("summary")
-              ? "ring-2 ring-primary ring-offset-4 rounded-sm"
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
               : ""
               }`}
           >
@@ -1748,7 +1781,7 @@ export default function BuilderPage() {
                         damping: 24,
                       }}
                       className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${isFragmentActive("experience-header") && isCurrentExp
-                        ? "ring-2 ring-primary ring-offset-4 rounded-sm"
+                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
                         : ""
                         } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
                     >
@@ -1841,7 +1874,7 @@ export default function BuilderPage() {
                         damping: 24,
                       }}
                       className={`mt-1 transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${isFragmentActive("experience-bullets") && isCurrentExp
-                        ? "ring-2 ring-primary ring-offset-4 rounded-sm"
+                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
                         : ""
                         }`}
                     >
@@ -1876,7 +1909,7 @@ export default function BuilderPage() {
             transition={{ type: "spring", stiffness: 240, damping: 24 }}
             style={{ marginBottom: layoutConfig.sectionMargin + "px" }}
             className={`transition-all duration-300 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -mx-2 ${getFragmentOpacity("education")} ${isFragmentActive("education")
-              ? "ring-2 ring-primary ring-offset-4 rounded-sm"
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
               : ""
               }`}
           >
@@ -1993,7 +2026,7 @@ export default function BuilderPage() {
             }}
             transition={{ type: "spring", stiffness: 240, damping: 24 }}
             className={`grid grid-cols-3 gap-8 transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${isFragmentActive("skills")
-              ? "ring-2 ring-primary ring-offset-4 rounded-sm"
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
               : ""
               }`}
           >
@@ -2244,15 +2277,7 @@ export default function BuilderPage() {
                 <div className="absolute inset-0 flex items-center justify-center p-8">
                   <motion.div
                     animate={{
-                      scale: isPreviewMode
-                        ? Math.min(
-                          ((previewContainerRef.current?.offsetHeight ||
-                            800) /
-                            1123) *
-                          0.95,
-                          1,
-                        )
-                        : zoomTransform.scale,
+                      scale: isPreviewMode ? previewScale : zoomTransform.scale,
                       y: isPreviewMode ? 0 : zoomTransform.yPixels,
                     }}
                     transition={{
