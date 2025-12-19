@@ -65,6 +65,7 @@ interface MetaResume {
     location?: string;
     linkedin?: string;
     summary?: string;
+    image?: string;
   };
   experience: Array<{
     id: string;
@@ -178,6 +179,7 @@ const INITIAL_RESUME: MetaResume = {
     location: "",
     linkedin: "",
     summary: "",
+    image: "",
   },
   experience: [
     {
@@ -337,6 +339,7 @@ export default function BuilderPage() {
   const fragmentRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const resumeContainerRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [zoomTransform, setZoomTransform] = useState({
     y: 0,
     scale: 0.5,
@@ -982,7 +985,9 @@ export default function BuilderPage() {
 
     setIsExporting(true);
     try {
-      const blob = await pdf(<ResumePDF resume={resume} />).toBlob();
+      const blob = await pdf(
+        <ResumePDF resume={resume} layout={layoutConfig} />,
+      ).toBlob();
 
       const firstName = resume.personal.firstName?.trim() || "";
       const lastName = resume.personal.lastName?.trim() || "";
@@ -1070,27 +1075,27 @@ export default function BuilderPage() {
     if (step.section === "personal" && step.fragment === "name") {
       return (
         <div className="space-y-4">
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" key="firstname">
             <Label htmlFor="firstName">First Name *</Label>
             <Input
               id="firstName"
-              value={resume.personal.firstName}
+              value={resume.personal.firstName || ""}
               onChange={(e) => updatePersonal("firstName", e.target.value)}
               placeholder="Enter your first name"
               className="placeholder:text-muted-foreground"
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" key="lastname">
             <Label htmlFor="lastName">Last Name *</Label>
             <Input
               id="lastName"
-              value={resume.personal.lastName}
+              value={resume.personal.lastName || ""}
               onChange={(e) => updatePersonal("lastName", e.target.value)}
               placeholder="Enter your last name"
               className="placeholder:text-muted-foreground"
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" key="headline">
             <Label htmlFor="headline">Headline / Job Title</Label>
             <Input
               id="headline"
@@ -1100,6 +1105,51 @@ export default function BuilderPage() {
               className="placeholder:text-muted-foreground"
             />
           </div>
+          <div className="space-y-1.5" key="photo">
+            <Label htmlFor="image-upload">Profile Photo</Label>
+            <div className="flex gap-2 items-center">
+              <Input
+                id="image-upload"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      updatePersonal("image", reader.result as string);
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+                className="cursor-pointer flex-1"
+              />
+              {resume.personal.image && (
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={() => updatePersonal("image", "")}
+                  title="Remove photo"
+                >
+                  <div className="h-4 w-4">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                    </svg>
+                  </div>
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
       );
     }
@@ -1107,18 +1157,18 @@ export default function BuilderPage() {
     if (step.section === "personal" && step.fragment === "contact") {
       return (
         <div className="space-y-4">
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" key="email">
             <Label htmlFor="email">Email *</Label>
             <Input
               id="email"
               type="email"
-              value={resume.personal.email}
+              value={resume.personal.email || ""}
               onChange={(e) => updatePersonal("email", e.target.value)}
               placeholder="you@example.com"
               className="placeholder:text-muted-foreground"
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" key="phone">
             <Label htmlFor="phone">Phone</Label>
             <Input
               id="phone"
@@ -1129,7 +1179,7 @@ export default function BuilderPage() {
             />
           </div>
           <Separator />
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" key="location">
             <Label htmlFor="location">Location</Label>
             <Input
               id="location"
@@ -1139,7 +1189,7 @@ export default function BuilderPage() {
               className="placeholder:text-muted-foreground"
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" key="linkedin">
             <Label htmlFor="linkedin">LinkedIn</Label>
             <Input
               id="linkedin"
@@ -1149,6 +1199,7 @@ export default function BuilderPage() {
               className="placeholder:text-muted-foreground"
             />
           </div>
+          <Separator />
         </div>
       );
     }
@@ -1188,7 +1239,7 @@ export default function BuilderPage() {
             <Label htmlFor="company">Company *</Label>
             <Input
               id="company"
-              value={exp.company}
+              value={exp.company || ""}
               onChange={(e) => updateExperience("company", e.target.value)}
               placeholder="Company or organization name"
               className="placeholder:text-muted-foreground"
@@ -1198,7 +1249,7 @@ export default function BuilderPage() {
             <Label htmlFor="position">Position *</Label>
             <Input
               id="position"
-              value={exp.position}
+              value={exp.position || ""}
               onChange={(e) => updateExperience("position", e.target.value)}
               placeholder="Your job title or role"
               className="placeholder:text-muted-foreground"
@@ -1352,7 +1403,7 @@ export default function BuilderPage() {
             <Label htmlFor="institution">Institution *</Label>
             <Input
               id="institution"
-              value={edu.institution}
+              value={edu.institution || ""}
               onChange={(e) => updateEducation("institution", e.target.value)}
               placeholder="University or school name"
               className="placeholder:text-muted-foreground"
@@ -1362,7 +1413,7 @@ export default function BuilderPage() {
             <Label htmlFor="degree">Degree *</Label>
             <Input
               id="degree"
-              value={edu.degree}
+              value={edu.degree || ""}
               onChange={(e) => updateEducation("degree", e.target.value)}
               placeholder="e.g. Bachelor of Science, MBA, High School Diploma"
               className="placeholder:text-muted-foreground"
@@ -1372,7 +1423,7 @@ export default function BuilderPage() {
             <Label htmlFor="field">Field of Study *</Label>
             <Input
               id="field"
-              value={edu.field}
+              value={edu.field || ""}
               onChange={(e) => updateEducation("field", e.target.value)}
               placeholder="e.g. Computer Science, Business, Engineering"
               className="placeholder:text-muted-foreground"
@@ -1492,20 +1543,21 @@ export default function BuilderPage() {
   const getFragmentOpacity = (fragment: FragmentName) => {
     // In preview mode, check if fragment is complete - incomplete fragments should be dimmed
     if (isPreviewMode) {
-      const fragmentKeyMap: Record<FragmentName, keyof typeof stepCompletion> = {
-        "name": "name",
-        "contact": "contact",
-        "summary": "summary",
+      const fragmentKeyMap: Record<FragmentName, keyof typeof stepCompletion> =
+      {
+        name: "name",
+        contact: "contact",
+        summary: "summary",
         "experience-header": "experience",
         "experience-bullets": "experience-bullets",
-        "education": "education",
-        "skills": "skills",
+        education: "education",
+        skills: "skills",
       };
       const key = fragmentKeyMap[fragment];
       const isComplete = stepCompletion[key] ?? false;
       return isComplete ? "opacity-100" : "opacity-50";
     }
-    
+
     const fragmentOrder: FragmentName[] = [
       "name",
       "contact",
@@ -1535,7 +1587,7 @@ export default function BuilderPage() {
       `${resume.personal.firstName} ${resume.personal.lastName}`.trim();
     const headline =
       resume.personal.headline?.trim() || resume.experience[0]?.position || "";
-    
+
     const contactItems = [
       resume.personal.location?.trim(),
       resume.personal.email?.trim(),
@@ -1567,17 +1619,14 @@ export default function BuilderPage() {
     const sectionMargin = usePDFStyle ? 16 : layoutConfig.sectionMargin;
     const itemMargin = usePDFStyle ? 12 : layoutConfig.itemMargin;
 
+    // Dynamic Image Size Calculation
+    const imageWidth = baseFontSize * 6;
+    const imageHeight = imageWidth * (4 / 3); // 3:4 aspect ratio
+
     return (
       <div
         ref={resumeContainerRef}
-        className="bg-card shadow-2xl relative"
-        style={{
-          // A4 dimensions: 210mm × 297mm
-          width: "210mm",
-          height: "297mm",
-          minWidth: "210mm",
-          minHeight: "297mm",
-        }}
+        className="bg-card shadow-2xl relative w-[210mm] h-[297mm] min-w-[210mm] min-h-[297mm]"
       >
         <div
           ref={contentRef}
@@ -1589,113 +1638,152 @@ export default function BuilderPage() {
             fontFamily: "Inter, sans-serif",
           }}
         >
-          {/* Header - Matching PDF style */}
-          <motion.div
-            ref={setFragmentRef("name")}
-            onClick={() => handleFragmentClick(() => jumpToSection("name"))}
-            animate={{
-              scale: isFragmentActive("name") ? 1.02 : 1,
+          {/* Personal Section with Image - Flex Layout */}
+          <div
+            className="flex justify-between items-stretch gap-6"
+            style={{
+              marginBottom: sectionMargin,
             }}
-            transition={{ type: "spring", stiffness: 260, damping: 26 }}
-            style={{ marginBottom: 16 }}
-            className={`transition-all duration-300 rounded-lg -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("name")} ${
-              isFragmentActive("name")
-                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                : ""
-            }`}
           >
-            {fullName ? (
-              <h1
-                className="font-bold text-foreground"
-                style={{ 
-                  fontSize: `${nameSize}pt`,
-                  marginBottom: 4,
+            {/* Left Side - Name, Headline, Contact */}
+            <div className="flex-1 min-w-0">
+              {/* Header - Matching PDF style */}
+              <motion.div
+                ref={setFragmentRef("name")}
+                onClick={() => handleFragmentClick(() => jumpToSection("name"))}
+                animate={{
+                  scale: isFragmentActive("name") ? 1.02 : 1,
                 }}
+                transition={{ type: "spring", stiffness: 260, damping: 26 }}
+                className={`transition-all duration-300 rounded-lg -mx-2 px-2 mb-4 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("name")} ${isFragmentActive("name")
+                  ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                  : ""
+                  }`}
               >
-                {fullName}
-              </h1>
-            ) : (
-              <h1
-                className="font-bold text-muted-foreground/60"
-                style={{ 
-                  fontSize: `${nameSize}pt`,
-                  marginBottom: 4,
-                }}
-              >
-                First Name Last Name
-              </h1>
-            )}
-            {headline ? (
-              <h2
-                className="font-bold uppercase text-foreground"
-                style={{
-                  fontSize: `${headlineSize}pt`,
-                  marginBottom: 6,
-                  letterSpacing: 1,
-                }}
-              >
-                {headline}
-              </h2>
-            ) : (
-              <h2
-                className="font-bold uppercase text-muted-foreground/60"
-                style={{
-                  fontSize: `${headlineSize}pt`,
-                  marginBottom: 6,
-                  letterSpacing: 1,
-                }}
-              >
-                Job Title / Headline
-              </h2>
-            )}
-          </motion.div>
+                {fullName ? (
+                  <h1
+                    className="font-bold text-foreground mb-1"
+                    style={{
+                      fontSize: `${nameSize}pt`,
+                    }}
+                  >
+                    {fullName}
+                  </h1>
+                ) : (
+                  <h1
+                    className="font-bold text-muted-foreground/60 mb-1"
+                    style={{
+                      fontSize: `${nameSize}pt`,
+                    }}
+                  >
+                    First Name Last Name
+                  </h1>
+                )}
+                {headline ? (
+                  <h2
+                    className="font-bold uppercase text-foreground mb-1.5 tracking-[1px]"
+                    style={{
+                      fontSize: `${headlineSize}pt`,
+                    }}
+                  >
+                    {headline}
+                  </h2>
+                ) : (
+                  <h2
+                    className="font-bold uppercase text-muted-foreground/60 mb-1.5 tracking-[1px]"
+                    style={{
+                      fontSize: `${headlineSize}pt`,
+                    }}
+                  >
+                    Job Title / Headline
+                  </h2>
+                )}
+              </motion.div>
 
-          {/* Contact Info - Matching PDF style */}
-          <motion.div
-            ref={setFragmentRef("contact")}
-            onClick={() => handleFragmentClick(() => jumpToSection("contact"))}
-            animate={{
-              scale: isFragmentActive("contact") ? 1.02 : 1,
-            }}
-            transition={{ type: "spring", stiffness: 260, damping: 26 }}
-            style={{ marginBottom: sectionMargin }}
-            className={`transition-all duration-300 rounded-lg py-1 -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("contact")} ${
-              isFragmentActive("contact")
-                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                : ""
-            }`}
-          >
-            {contactItems.length > 0 ? (
-              <div
-                className="flex flex-wrap items-center text-muted-foreground"
-                style={{
-                  fontSize: `${dateSize}pt`,
-                  gap: 8,
+              {/* Contact Info - Matching PDF style */}
+              <motion.div
+                ref={setFragmentRef("contact")}
+                onClick={() =>
+                  handleFragmentClick(() => jumpToSection("contact"))
+                }
+                animate={{
+                  scale: isFragmentActive("contact") ? 1.02 : 1,
                 }}
+                transition={{ type: "spring", stiffness: 260, damping: 26 }}
+                className={`transition-all duration-300 rounded-lg py-1 -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("contact")} ${isFragmentActive("contact")
+                  ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                  : ""
+                  }`}
               >
-                {contactItems.map((item, idx) => (
-                  <span key={idx} className="flex items-center">
-                    {idx > 0 && (
-                      <span className="text-muted-foreground/60" style={{ margin: "0 4px" }}>
-                        {" | "}
-                      </span>
-                    )}
-                    <span>{item}</span>
+                {contactItems.length > 0 ? (
+                  <div
+                    className="flex flex-wrap items-center text-muted-foreground"
+                    style={{
+                      fontSize: `${dateSize}pt`,
+                    }}
+                  >
+                    {contactItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center">
+                        {idx > 0 && (
+                          <div className="bg-muted-foreground/30 w-px h-3 mx-2" />
+                        )}
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    className="flex flex-wrap items-center text-muted-foreground/60"
+                    style={{
+                      fontSize: `${dateSize}pt`,
+                    }}
+                  >
+                    <span>Location</span>
+                    <div className="bg-muted-foreground/30 w-px h-3 mx-2" />
+                    <span>Email</span>
+                    <div className="bg-muted-foreground/30 w-px h-3 mx-2" />
+                    <span>Phone</span>
+                    <div className="bg-muted-foreground/30 w-px h-3 mx-2" />
+                    <span>LinkedIn</span>
+                  </div>
+                )}
+              </motion.div>
+            </div>
+
+            {/* Right Side - Image (3:4 aspect ratio base, scales with content) */}
+            <div
+              className="shrink-0 self-stretch flex items-start cursor-pointer group relative"
+              style={{
+                width: `${imageWidth}pt`,
+                height: `${imageHeight}pt`,
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              title="Click to change photo"
+            >
+              {resume.personal.image ? (
+                <>
+                  <img
+                    src={resume.personal.image}
+                    alt="Profile"
+                    className="w-full h-full object-cover rounded"
+                  />
+                  {/* Hover highlight overlay matching other sections */}
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-primary/10 rounded transition-opacity" />
+                </>
+              ) : (
+                <div className="bg-muted/30 border border-muted-foreground/20 rounded w-full h-full flex items-center justify-center text-center p-2 group-hover:bg-muted/50 transition-colors">
+                  <span
+                    className="text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors"
+                    style={{
+                      fontSize: `${baseFontSize - 2}pt`,
+                    }}
+                  >
+                    Photo
                   </span>
-                ))}
-              </div>
-            ) : (
-              <div
-                className="flex flex-wrap items-center text-muted-foreground/60"
-                style={{
-                  fontSize: `${dateSize}pt`,
-                  gap: 8,
-                }}
-              >
-                Location | Email | Phone | LinkedIn
-              </div>
-            )}
-          </motion.div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Summary - Always show with placeholder if empty */}
           <motion.div
@@ -1706,11 +1794,10 @@ export default function BuilderPage() {
             }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
             style={{ marginBottom: sectionMargin }}
-            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("summary")} ${
-              isFragmentActive("summary")
-                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                : ""
-            }`}
+            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("summary")} ${isFragmentActive("summary")
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+              : ""
+              }`}
           >
             <h3
               className="font-bold uppercase text-foreground border-b border-border"
@@ -1741,7 +1828,8 @@ export default function BuilderPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Write 2-3 sentences about your professional background, key skills, and what you're looking for...
+                Write 2-3 sentences about your professional background, key
+                skills, and what you're looking for...
               </p>
             )}
           </motion.div>
@@ -1752,18 +1840,20 @@ export default function BuilderPage() {
             style={{ marginBottom: sectionMargin }}
           >
             <h3
-              className="font-bold uppercase text-foreground border-b border-border"
+              className="font-bold uppercase text-foreground border-b border-border mb-2 pb-1 tracking-[1px]"
               style={{
                 fontSize: `${sectionHeaderSize}pt`,
-                marginBottom: 8,
-                paddingBottom: 4,
-                letterSpacing: 1,
               }}
             >
               Professional Experience
             </h3>
             {hasExperience ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: itemMargin }}>
+              <div
+                className="flex flex-col"
+                style={{
+                  gap: itemMargin,
+                }}
+              >
                 {resume.experience.map((exp, idx) => {
                   const isCurrentExp = idx === currentExpIndex;
                   const hasContent = hasExperienceData(exp);
@@ -1787,7 +1877,8 @@ export default function BuilderPage() {
                         }}
                         animate={{
                           scale:
-                            isFragmentActive("experience-header") && isCurrentExp
+                            isFragmentActive("experience-header") &&
+                              isCurrentExp
                               ? 1.02
                               : 1,
                         }}
@@ -1796,20 +1887,15 @@ export default function BuilderPage() {
                           stiffness: 240,
                           damping: 24,
                         }}
-                        className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${
-                          isFragmentActive("experience-header") && isCurrentExp
-                            ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                            : ""
-                        } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
+                        className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${isFragmentActive("experience-header") && isCurrentExp
+                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                          : ""
+                          } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            marginBottom: 2,
-                          }}
-                        >
-                          <div style={{ display: "flex", flexDirection: "column" }}>
+                        <div className="flex justify-between mb-0.5">
+                          <div
+                            style={{ display: "flex", flexDirection: "column" }}
+                          >
                             {exp.company && (
                               <p
                                 className="font-bold text-foreground"
@@ -1840,7 +1926,9 @@ export default function BuilderPage() {
                             >
                               {formatDateValue(exp.startDate)}
                               {exp.startDate && " - "}
-                              {exp.current ? "Present" : formatDateValue(exp.endDate)}
+                              {exp.current
+                                ? "Present"
+                                : formatDateValue(exp.endDate)}
                             </p>
                             {exp.location && (
                               <p
@@ -1871,7 +1959,8 @@ export default function BuilderPage() {
                           }}
                           animate={{
                             scale:
-                              isFragmentActive("experience-bullets") && isCurrentExp
+                              isFragmentActive("experience-bullets") &&
+                                isCurrentExp
                                 ? 1.02
                                 : 1,
                           }}
@@ -1880,37 +1969,29 @@ export default function BuilderPage() {
                             stiffness: 240,
                             damping: 24,
                           }}
-                          style={{ marginTop: 4, paddingLeft: 12 }}
-                          className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${
-                            isFragmentActive("experience-bullets") && isCurrentExp
-                              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                              : ""
-                          }`}
+                          className={`transition-all duration-300 rounded-lg p-2 -mx-2 mt-1 pl-3 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${isFragmentActive("experience-bullets") &&
+                            isCurrentExp
+                            ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                            : ""
+                            }`}
                         >
                           {exp.description.map((bullet, bulletIdx) => (
                             <div
                               key={bulletIdx}
-                              style={{
-                                display: "flex",
-                                flexDirection: "row",
-                                marginBottom: 2,
-                              }}
+                              className="flex flex-row mb-0.5"
                             >
                               <span
-                                className="text-muted-foreground"
+                                className="text-muted-foreground w-2"
                                 style={{
-                                  width: 8,
                                   fontSize: `${baseFontSize}pt`,
                                 }}
                               >
                                 •
                               </span>
                               <span
-                                className="text-foreground"
+                                className="text-foreground flex-1 leading-[1.4]"
                                 style={{
-                                  flex: 1,
                                   fontSize: `${bulletSize}pt`,
-                                  lineHeight: 1.4,
                                 }}
                               >
                                 {bullet}
@@ -1942,18 +2023,15 @@ export default function BuilderPage() {
             style={{ marginBottom: sectionMargin }}
           >
             <h3
-              className="font-bold uppercase text-foreground border-b border-border"
+              className="font-bold uppercase text-foreground border-b border-border mb-2 pb-1 tracking-[1px]"
               style={{
                 fontSize: `${sectionHeaderSize}pt`,
-                marginBottom: 8,
-                paddingBottom: 4,
-                letterSpacing: 1,
               }}
             >
               Education
             </h3>
             {hasEducation ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="flex flex-col gap-2">
                 {resume.education.map((edu, idx) => {
                   if (!edu.institution && !edu.degree) return null;
 
@@ -1965,8 +2043,7 @@ export default function BuilderPage() {
                           : undefined
                       }
                       key={edu.id}
-                      style={{ marginBottom: 8 }}
-                      className={`rounded-sm p-1 transition-colors ${!isPreviewMode ? "hover:bg-primary/5 cursor-pointer" : ""}`}
+                      className={`rounded-sm p-1 transition-colors mb-2 ${!isPreviewMode ? "hover:bg-primary/5 cursor-pointer" : ""}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleFragmentClick(() =>
@@ -1974,12 +2051,7 @@ export default function BuilderPage() {
                         );
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                        }}
-                      >
+                      <div className="flex justify-between">
                         <div>
                           {edu.institution && (
                             <p
@@ -1997,7 +2069,9 @@ export default function BuilderPage() {
                               fontSize: `${positionSize}pt`,
                             }}
                           >
-                            {[edu.degree, edu.field].filter(Boolean).join(" in ")}
+                            {[edu.degree, edu.field]
+                              .filter(Boolean)
+                              .join(" in ")}
                           </p>
                         </div>
                         <p
@@ -2038,38 +2112,27 @@ export default function BuilderPage() {
             }}
             transition={{ type: "spring", stiffness: 240, damping: 24 }}
             style={{ marginBottom: sectionMargin }}
-            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${
-              isFragmentActive("skills")
-                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                : ""
-            }`}
+            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${isFragmentActive("skills")
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+              : ""
+              }`}
           >
             <h3
-              className="font-bold uppercase text-foreground border-b border-border"
+              className="font-bold uppercase text-foreground border-b border-border mb-2 pb-1 tracking-[1px]"
               style={{
                 fontSize: `${sectionHeaderSize}pt`,
-                marginBottom: 8,
-                paddingBottom: 4,
-                letterSpacing: 1,
               }}
             >
               Skills
             </h3>
             {hasSkills ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "row",
-                  gap: 24,
-                }}
-              >
+              <div className="flex flex-row gap-6">
                 {(resume.skills.languages?.length ?? 0) > 0 && (
-                  <div style={{ flex: 1 }}>
+                  <div className="flex-1">
                     <p
-                      className="font-bold text-foreground"
+                      className="font-bold text-foreground mb-1"
                       style={{
                         fontSize: `${baseFontSize}pt`,
-                        marginBottom: 4,
                       }}
                     >
                       Languages
@@ -2085,12 +2148,11 @@ export default function BuilderPage() {
                   </div>
                 )}
                 {(resume.skills.technical?.length ?? 0) > 0 && (
-                  <div style={{ flex: 1 }}>
+                  <div className="flex-1">
                     <p
-                      className="font-bold text-foreground"
+                      className="font-bold text-foreground mb-1"
                       style={{
                         fontSize: `${baseFontSize}pt`,
-                        marginBottom: 4,
                       }}
                     >
                       Technical Skills
@@ -2145,7 +2207,7 @@ export default function BuilderPage() {
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={handleReset}
-                  className="bg-destructive hover:bg-destructive/90"
+                  className="bg-destructive hover:bg-destructive/90 text-foreground"
                 >
                   Reset Everything
                 </AlertDialogAction>
@@ -2192,13 +2254,12 @@ export default function BuilderPage() {
                             );
                             if (stepIndex !== -1) setCurrentStep(stepIndex);
                           }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left ${
-                            isActive
-                              ? "bg-primary text-primary-foreground"
-                              : status === "complete"
-                                ? "bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20"
-                                : "hover:bg-muted"
-                          }`}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left ${isActive
+                            ? "bg-primary text-primary-foreground"
+                            : status === "complete"
+                              ? "bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20"
+                              : "hover:bg-muted"
+                            }`}
                         >
                           <span className="shrink-0">
                             {SECTION_ICONS[section]}
@@ -2291,13 +2352,12 @@ export default function BuilderPage() {
                                 setLayoutConfig(preset);
                               }
                             }}
-                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                              isSelected
-                                ? "bg-primary text-primary-foreground shadow-sm"
-                                : isValid
-                                  ? "hover:text-foreground text-muted-foreground"
-                                  : "text-muted-foreground/40 cursor-not-allowed"
-                            }`}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isSelected
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : isValid
+                                ? "hover:text-foreground text-muted-foreground"
+                                : "text-muted-foreground/40 cursor-not-allowed"
+                              }`}
                           >
                             {preset.id.charAt(0).toUpperCase() +
                               preset.id.slice(1).replace("-", " ")}
@@ -2482,13 +2542,12 @@ export default function BuilderPage() {
                             setLayoutConfig(preset);
                           }
                         }}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                          isSelected
-                            ? "bg-primary text-primary-foreground shadow-sm"
-                            : isValid
-                              ? "text-muted-foreground"
-                              : "text-muted-foreground/40"
-                        }`}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isSelected
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : isValid
+                            ? "text-muted-foreground"
+                            : "text-muted-foreground/40"
+                          }`}
                       >
                         {preset.id.charAt(0).toUpperCase()}
                       </button>
@@ -2503,11 +2562,11 @@ export default function BuilderPage() {
                 animate={{
                   scale: isPreviewMode
                     ? Math.min(
-                        ((previewContainerRef.current?.offsetWidth || 400) /
-                          794) *
-                          0.95,
-                        0.5,
-                      )
+                      ((previewContainerRef.current?.offsetWidth || 400) /
+                        794) *
+                      0.95,
+                      0.5,
+                    )
                     : zoomTransform.scale,
                   y: isPreviewMode ? 0 : zoomTransform.yPixels,
                 }}
@@ -2582,6 +2641,23 @@ export default function BuilderPage() {
           )}
         </div>
       )}
+      {/* Hidden File Input for Image Upload from Preview */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              updatePersonal("image", reader.result as string);
+            };
+            reader.readAsDataURL(file);
+          }
+        }}
+      />
     </div>
   );
 }

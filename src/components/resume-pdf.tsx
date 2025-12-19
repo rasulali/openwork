@@ -7,6 +7,7 @@ import {
   View,
   StyleSheet,
   Font,
+  Image,
 } from "@react-pdf/renderer";
 
 // Register local Inter font
@@ -26,6 +27,7 @@ interface MetaResume {
     location?: string;
     linkedin?: string;
     summary?: string;
+    image?: string;
   };
   experience: Array<{
     id: string;
@@ -62,8 +64,24 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     color: "#0a0a0a",
   },
-  header: {
+  headerContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 16,
+    gap: 24,
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    width: 60, // Fixed width matching placeholder min-width in HTML
+  },
+  image: {
+    width: "100%",
+    height: "auto",
+    aspectRatio: "3/4", // 3:4 aspect ratio
+    borderRadius: 4,
+    objectFit: "contain",
   },
   name: {
     fontSize: 28,
@@ -203,11 +221,25 @@ const formatDate = (dateStr?: string): string => {
   return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 };
 
-interface ResumePDFProps {
-  resume: MetaResume;
+interface LayoutConfig {
+  id: string;
+  fontSize: number;
+  headerSize: number;
+  roleSize: number;
+  sectionHeaderSize: number;
+  sectionMargin: number;
+  itemMargin: number;
+  lineHeight: number;
+  padding: number;
+  gap: number;
 }
 
-export const ResumePDF = ({ resume }: ResumePDFProps) => {
+interface ResumePDFProps {
+  resume: MetaResume;
+  layout?: LayoutConfig;
+}
+
+export const ResumePDF = ({ resume, layout }: ResumePDFProps) => {
   const fullName =
     `${resume.personal.firstName} ${resume.personal.lastName}`.trim();
   const headline =
@@ -230,21 +262,78 @@ export const ResumePDF = ({ resume }: ResumePDFProps) => {
     (resume.skills.technical?.length ?? 0) > 0 ||
     (resume.skills.languages?.length ?? 0) > 0;
 
+  // Dynamic Image Size Calculation
+  // Standard width is 60pt for 10pt font (6x multiplier)
+  const baseFontSize = layout?.fontSize || 10;
+  const imageWidth = baseFontSize * 6;
+  const imageHeight = imageWidth * (4 / 3);
+
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
+      <Page
+        size="A4"
+        style={{
+          ...styles.page,
+          padding: layout?.padding || 20,
+          fontSize: layout?.fontSize || 10,
+        }}
+      >
         {/* Header */}
-        <View style={styles.header}>
-          {fullName && <Text style={styles.name}>{fullName}</Text>}
-          {headline && <Text style={styles.headline}>{headline}</Text>}
-          {contactItems.length > 0 && (
-            <View style={styles.contactRow}>
-              {contactItems.map((item, idx) => (
-                <Text key={idx} style={styles.contactItem}>
-                  {item}
-                  {idx < contactItems.length - 1 && " | "}
-                </Text>
-              ))}
+        <View
+          style={{
+            ...styles.headerContainer,
+            marginBottom: layout?.sectionMargin || 16,
+            gap: layout?.gap || 24,
+          }}
+        >
+          <View style={styles.headerLeft}>
+            {fullName && (
+              <Text
+                style={{
+                  ...styles.name,
+                  fontSize: layout?.headerSize || 28,
+                }}
+              >
+                {fullName}
+              </Text>
+            )}
+            {headline && (
+              <Text
+                style={{
+                  ...styles.headline,
+                  fontSize: layout?.roleSize || 12,
+                }}
+              >
+                {headline}
+              </Text>
+            )}
+            {contactItems.length > 0 && (
+              <View style={styles.contactRow}>
+                {contactItems.map((item, idx) => (
+                  <Text key={idx} style={styles.contactItem}>
+                    {item}
+                    {idx < contactItems.length - 1 && " | "}
+                  </Text>
+                ))}
+              </View>
+            )}
+          </View>
+          {resume.personal.image && (
+            <View
+              style={{
+                width: imageWidth,
+                height: imageHeight,
+              }}
+            >
+              <Image
+                src={resume.personal.image}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  borderRadius: 4,
+                }}
+              />
             </View>
           )}
         </View>
