@@ -237,9 +237,34 @@ interface LayoutConfig {
 interface ResumePDFProps {
   resume: MetaResume;
   layout?: LayoutConfig;
+  improvingState?: {
+    section?: string;
+    field?: string;
+    identifier?: string;
+    isGlobal?: boolean;
+  } | null;
 }
 
-export const ResumePDF = ({ resume, layout }: ResumePDFProps) => {
+// Helper PDF Skeleton Components
+interface SkeletonProps {
+  width?: string | number;
+  height?: string | number;
+  style?: any;
+}
+
+const SkeletonBlock = ({ width = "100%", height = 10, style = {} }: SkeletonProps) => (
+  <View style={{ width, height, backgroundColor: "#e5e7eb", borderRadius: 2, ...style }} />
+);
+
+const SkeletonLines = ({ count = 3, height = 8, gap = 4, width = "100%" }: { count?: number, height?: number, gap?: number, width?: string | number }) => (
+  <View style={{ gap }}>
+    {Array.from({ length: count }).map((_, i) => (
+      <SkeletonBlock key={i} width={width} height={height} />
+    ))}
+  </View>
+);
+
+export const ResumePDF = ({ resume, layout, improvingState }: ResumePDFProps) => {
   const fullName =
     `${resume.personal.firstName} ${resume.personal.lastName}`.trim();
   const headline =
@@ -339,10 +364,18 @@ export const ResumePDF = ({ resume, layout }: ResumePDFProps) => {
         </View>
 
         {/* Summary */}
-        {resume.personal.summary && (
+        {(resume.personal.summary || improvingState?.section === "summary") && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Summary</Text>
-            <Text style={styles.summary}>{resume.personal.summary}</Text>
+            {improvingState?.section === "summary" ? (
+              <View style={{ gap: 4 }}>
+                <SkeletonBlock height={10} width="100%" />
+                <SkeletonBlock height={10} width="95%" />
+                <SkeletonBlock height={10} width="90%" />
+              </View>
+            ) : (
+              <Text style={styles.summary}>{resume.personal.summary}</Text>
+            )}
           </View>
         )}
 
@@ -376,15 +409,34 @@ export const ResumePDF = ({ resume, layout }: ResumePDFProps) => {
                         )}
                       </View>
                     </View>
-                    {exp.description.length > 0 && (
+
+                    {/* Description: Either Text or Skeleton */}
+                    {(improvingState?.section === "experience" && improvingState?.identifier === idx.toString()) ? (
                       <View style={styles.bulletList}>
-                        {exp.description.map((bullet, bulletIdx) => (
-                          <View key={bulletIdx} style={styles.bulletItem}>
-                            <Text style={styles.bullet}>•</Text>
-                            <Text style={styles.bulletText}>{bullet}</Text>
-                          </View>
-                        ))}
+                        <View style={{ marginBottom: 4, flexDirection: "row", gap: 8 }}>
+                          <SkeletonBlock width={8} height={8} style={{ marginTop: 2 }} />
+                          <SkeletonBlock height={8} width="90%" />
+                        </View>
+                        <View style={{ marginBottom: 4, flexDirection: "row", gap: 8 }}>
+                          <SkeletonBlock width={8} height={8} style={{ marginTop: 2 }} />
+                          <SkeletonBlock height={8} width="85%" />
+                        </View>
+                        <View style={{ marginBottom: 4, flexDirection: "row", gap: 8 }}>
+                          <SkeletonBlock width={8} height={8} style={{ marginTop: 2 }} />
+                          <SkeletonBlock height={8} width="88%" />
+                        </View>
                       </View>
+                    ) : (
+                      exp.description.length > 0 && (
+                        <View style={styles.bulletList}>
+                          {exp.description.map((bullet, bulletIdx) => (
+                            <View key={bulletIdx} style={styles.bulletItem}>
+                              <Text style={styles.bullet}>•</Text>
+                              <Text style={styles.bulletText}>{bullet}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )
                     )}
                   </View>
                 ),

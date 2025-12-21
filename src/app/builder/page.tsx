@@ -11,7 +11,6 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import {
   Popover,
   PopoverContent,
@@ -32,7 +31,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { motion } from "motion/react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { motion, AnimatePresence } from "motion/react";
 import {
   CalendarIcon,
   ChevronLeft,
@@ -50,9 +57,17 @@ import {
   Eye,
   Download,
   Loader2,
+  Sparkles,
+  Wand2,
+  Undo2,
+  CheckCircle2,
+  XCircle,
+  StopCircle,
 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { getLocalStorage, removeLocalStorage } from "@/utils/localStorage";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 
 // Types
 interface MetaResume {
@@ -90,6 +105,48 @@ interface MetaResume {
     languages?: string[];
   };
 }
+
+// Skeleton component for resume loading state
+const ResumeSkeleton = () => (
+  <div className="w-full h-full bg-background p-8 space-y-8">
+    {/* Header Skeleton */}
+    <div className="space-y-4">
+      <Skeleton className="h-8 w-1/3" />
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-1/4" />
+        <Skeleton className="h-4 w-1/4" />
+      </div>
+    </div>
+
+    {/* Summary Skeleton */}
+    <div className="space-y-3">
+      <Skeleton className="h-6 w-1/6" />
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-11/12" />
+        <Skeleton className="h-3 w-4/5" />
+      </div>
+    </div>
+
+    {/* Experience Skeleton */}
+    <div className="space-y-6">
+      <Skeleton className="h-6 w-1/5" />
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="space-y-3">
+          <div className="flex justify-between">
+            <Skeleton className="h-5 w-1/3" />
+            <Skeleton className="h-4 w-1/6" />
+          </div>
+          <div className="space-y-2 pl-4">
+            <Skeleton className="h-3 w-11/12" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-10/12" />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 type SectionName =
   | "personal"
@@ -339,6 +396,7 @@ export default function BuilderPage() {
   const fragmentRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const resumeContainerRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const previewToolbarRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [zoomTransform, setZoomTransform] = useState({
     y: 0,
@@ -346,6 +404,231 @@ export default function BuilderPage() {
     yPixels: 0,
   });
   const [isDesktop, setIsDesktop] = useState(true);
+
+  // AI Improvement State
+  const [isImproving, setIsImproving] = useState(false);
+  const [improvingState, setImprovingState] = useState<{
+    section?: string;
+    field?: string;
+    identifier?: string;
+    isGlobal?: boolean;
+  } | null>(null);
+  const abortController = useRef<AbortController | null>(null);
+
+  const [showImproveDialog, setShowImproveDialog] = useState(false);
+  const [jobDescription, setJobDescription] = useState("");
+
+  // Version Control
+  const [alternateResume, setAlternateResume] = useState<MetaResume | null>(
+    null,
+  );
+  const [versionLabel, setVersionLabel] = useState<"original" | "improved">(
+    "original",
+  );
+
+  const cancelImprovement = () => {
+    if (abortController.current) {
+      abortController.current.abort();
+      abortController.current = null;
+      setIsImproving(false);
+      setImprovingState(null);
+    }
+  };
+
+  const handleImproveSection = async (
+    section: string,
+    field: string,
+    identifier?: string,
+    customPrompt?: string,
+  ) => {
+    if (isImproving) return;
+
+    setIsImproving(true);
+    setImprovingState({ section, field, identifier, isGlobal: false });
+    abortController.current = new AbortController();
+
+    try {
+      // Save backup if not already saved
+      if (!alternateResume && versionLabel === "original") {
+        setAlternateResume(JSON.parse(JSON.stringify(resume)));
+      }
+
+      const response = await fetch("/api/improve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resume,
+          section,
+          field,
+          identifier,
+          customPrompt,
+          jobDescription: "", // Typically granular updates use internal context, but we could add global JD if needed
+        }),
+        signal: abortController.current.signal,
+      });
+
+      if (!response.ok) throw new Error("Failed to improve section");
+
+      const data = await response.json();
+      if (data.success && data.data) {
+        // Update specific field in resume
+        setResume((prev) => {
+          const newResume = { ...prev };
+          let newValue = data.data; // The improved string or array
+
+          if (section === "personal") {
+            // @ts-ignore
+            newResume.personal = { ...newResume.personal, [field]: newValue };
+          } else if (section === "summary") {
+            // Summary is part of personal in our struct
+            newResume.personal = { ...newResume.personal, summary: newValue };
+          } else if (section === "experience" && identifier) {
+            const idx = parseInt(identifier);
+            if (!isNaN(idx) && newResume.experience[idx]) {
+              const newExps = [...newResume.experience];
+              // @ts-ignore
+              newExps[idx] = { ...newExps[idx], [field]: newValue };
+              newResume.experience = newExps;
+            }
+          } else if (section === "education" && identifier) {
+            const idx = parseInt(identifier);
+            if (!isNaN(idx) && newResume.education[idx]) {
+              const newEdus = [...newResume.education];
+              // @ts-ignore
+              newEdus[idx] = { ...newEdus[idx], [field]: newValue };
+              newResume.education = newEdus;
+            }
+          }
+          return newResume;
+        });
+
+        // If we improved a section, we are technically in "improved" state relative to the backup
+        // But the user might want to keep editing.
+        if (versionLabel !== "improved") {
+          setVersionLabel("improved");
+        }
+      }
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        console.log("Improvement cancelled");
+      } else {
+        console.error("Section improvement failed:", error);
+      }
+    } finally {
+      setIsImproving(false);
+      setImprovingState(null);
+      abortController.current = null;
+    }
+  };
+
+  const handleImproveResume = async () => {
+    const isEmpty = isResumeEmpty();
+
+    // For generation from scratch, require at least some input
+    if (isEmpty && !jobDescription.trim()) {
+      return;
+    }
+
+    setIsImproving(true);
+    setShowImproveDialog(false); // Close immediately
+    setImprovingState({ isGlobal: true });
+    setIsPreviewMode(true); // Switch to preview to show the glowing ring
+    abortController.current = new AbortController();
+
+    try {
+      // If we are currently on "original", the current resume becomes the alternate (backup)
+      // If we are on "improved" and improving AGAIN, we iterate on the current one,
+      // but we should probably keep the *initial* original if possible?
+      // For simplicity: process current displayed resume, and ensure we have a backup.
+
+      let backup = alternateResume;
+      if (versionLabel === "original" && !isEmpty) {
+        backup = JSON.parse(JSON.stringify(resume));
+      } else if (!backup && !isEmpty) {
+        // Should not happen if we are in improved mode, but handling just in case
+        backup = JSON.parse(JSON.stringify(resume));
+      }
+
+      // Only set backup if we're not generating from scratch
+      if (!isEmpty) {
+        setAlternateResume(backup);
+      }
+
+      const response = await fetch("/api/improve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resume: isEmpty ? INITIAL_RESUME : resume,
+          jobDescription,
+          generateFromScratch: isEmpty,
+        }),
+        signal: abortController.current.signal,
+      });
+
+      if (!response.ok)
+        throw new Error(
+          isEmpty ? "Failed to generate resume" : "Failed to improve resume",
+        );
+
+      const data = await response.json();
+      if (data.success && data.data) {
+        setResume(data.data);
+        if (!isEmpty) {
+          setVersionLabel("improved");
+        } else {
+          // For generation from scratch, this becomes the original
+          setVersionLabel("original");
+        }
+        setShowImproveDialog(false);
+      }
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        console.log(isEmpty ? "Generation cancelled" : "Improvement cancelled");
+      } else {
+        console.error(
+          isEmpty ? "Generation failed:" : "Improvement failed:",
+          error,
+        );
+      }
+    } finally {
+      setIsImproving(false);
+      setImprovingState(null);
+      abortController.current = null;
+    }
+  };
+
+  const handleRevertToOriginal = () => {
+    if (alternateResume && versionLabel === "improved") {
+      setResume(alternateResume);
+      setAlternateResume(null);
+      setVersionLabel("original");
+    } else if (versionLabel === "original" && alternateResume) {
+      // We are viewing original, but want to discard the improved version (which is in alternate)
+      setAlternateResume(null);
+    }
+  };
+
+  const handleKeepImproved = () => {
+    if (versionLabel === "improved") {
+      setAlternateResume(null); // Clear the backup (original)
+      setVersionLabel("original"); // Accepted version becomes the new "original" basis
+      setJobDescription("");
+    } else if (versionLabel === "original" && alternateResume) {
+      // Viewing original, decided to keep it (discard improved)
+      setAlternateResume(null);
+    }
+  };
+
+  const handleToggleVersion = () => {
+    if (alternateResume) {
+      const current = JSON.parse(JSON.stringify(resume));
+      setResume(alternateResume);
+      setAlternateResume(current);
+      setVersionLabel((prev) =>
+        prev === "original" ? "improved" : "original",
+      );
+    }
+  };
 
   useEffect(() => {
     const uploadedResumeData = getLocalStorage("resume_upload");
@@ -470,7 +753,7 @@ export default function BuilderPage() {
 
       let idealScale = Math.min(scaleByWidth, scaleByHeight);
 
-      const maxScale = isDesktop ? 1.1 : MAX_MOBILE_SCALE;
+      const maxScale = isDesktop ? MAX_DESKTOP_SCALE : MAX_MOBILE_SCALE;
       idealScale = Math.min(idealScale, maxScale);
 
       const minScale = isDesktop ? 0.4 : 0.3;
@@ -541,6 +824,7 @@ export default function BuilderPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [minValidPresetIndex, setMinValidPresetIndex] = useState(0);
   const [isAutoScalingSettled, setIsAutoScalingSettled] = useState(false);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Calculate preview scale when entering preview mode or when container resizes
@@ -551,10 +835,29 @@ export default function BuilderPage() {
       const container = previewContainerRef.current;
       if (!container) return;
 
+      // Get toolbar height if it exists
+      const toolbar = previewToolbarRef.current;
+      const currentToolbarHeight = toolbar ? toolbar.offsetHeight + 32 : 0; // 32px for top-4 spacing (top-4 = 1rem = 16px, so 16px top + 16px spacing = 32px)
+      setToolbarHeight(currentToolbarHeight);
+
       const a4Height = 1123;
+      const a4Width = 794; // A4 width in pixels at 96 DPI
       const containerHeight = container.offsetHeight;
-      const availableHeight = containerHeight - 64;
-      const scale = Math.min(availableHeight / a4Height, 1);
+      const containerWidth = container.offsetWidth;
+
+      // Account for toolbar at top (if exists) and padding
+      // p-8 = 32px padding on each side, so 64px total vertical padding
+      // Also account for bottom export button area (approximately 80px)
+      const availableHeight = containerHeight - currentToolbarHeight - 64 - 80; // 64px for padding (32px top + 32px bottom), 80px for bottom button
+      const availableWidth = containerWidth - 64; // 64px for padding (32px left + 32px right)
+
+      const scaleByHeight = Math.min(
+        Math.max(availableHeight / a4Height, 0),
+        1,
+      );
+      const scaleByWidth = Math.min(Math.max(availableWidth / a4Width, 0), 1);
+      const scale = Math.min(scaleByHeight, scaleByWidth);
+
       setPreviewScale(scale);
     };
 
@@ -563,6 +866,11 @@ export default function BuilderPage() {
     const resizeObserver = new ResizeObserver(calculatePreviewScale);
     if (previewContainerRef.current) {
       resizeObserver.observe(previewContainerRef.current);
+    }
+
+    // Also observe toolbar if it exists
+    if (previewToolbarRef.current) {
+      resizeObserver.observe(previewToolbarRef.current);
     }
 
     return () => {
@@ -825,6 +1133,22 @@ export default function BuilderPage() {
     [],
   );
 
+  // Check if resume is in placeholder/empty state
+  const isResumeEmpty = useCallback(() => {
+    const hasName =
+      hasText(resume.personal.firstName) || hasText(resume.personal.lastName);
+    const hasEmail = hasText(resume.personal.email);
+    const hasSummary = hasText(resume.personal.summary);
+    const hasExp = resume.experience.some((exp) => hasExperienceData(exp));
+    const hasEdu = resume.education.some((edu) => hasEducationData(edu));
+    const hasSkills =
+      hasItems(resume.skills.technical) || hasItems(resume.skills.languages);
+
+    return (
+      !hasName && !hasEmail && !hasSummary && !hasExp && !hasEdu && !hasSkills
+    );
+  }, [resume]);
+
   const handleReset = useCallback(() => {
     setResume(INITIAL_RESUME);
     setCurrentStep(0);
@@ -833,6 +1157,9 @@ export default function BuilderPage() {
     setTempBullet("");
     setTempTechnicalSkill("");
     setTempLanguage("");
+    setAlternateResume(null);
+    setVersionLabel("original");
+    setJobDescription("");
     localStorage.removeItem("resume-draft");
   }, []);
 
@@ -1008,6 +1335,89 @@ export default function BuilderPage() {
       setIsExporting(false);
     }
   }, [isExporting, resume]);
+
+  const AIAssistButton = ({
+    section,
+    field,
+    identifier,
+    label,
+  }: {
+    section: string;
+    field: string;
+    identifier?: string;
+    label: string;
+  }) => {
+    const [prompt, setPrompt] = useState("");
+    const [isOpen, setIsOpen] = useState(false);
+
+    const isThisImproving =
+      improvingState?.section === section &&
+      improvingState?.field === field &&
+      (identifier === undefined || improvingState?.identifier === identifier);
+
+    // If global improvement is happening, disable all buttons
+    const isDisabled = isImproving;
+
+    return (
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-6 w-6 ml-2"
+            disabled={isDisabled}
+            title={`Improve ${label}`}
+          >
+            {isThisImproving ? (
+              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+            ) : (
+              <Sparkles className="h-3 w-3 text-indigo-500" />
+            )}
+            <span className="sr-only">Improve {label}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-3" align="start">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <h4 className="font-medium text-sm leading-none flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-indigo-500" />
+                Improve {label}
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Auto-optimize or give specific instructions.
+              </p>
+            </div>
+            <Textarea
+              placeholder={`e.g. Make this ${label.toLowerCase()} result-oriented...`}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              className="h-20 text-sm resize-none"
+            />
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setIsOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
+                onClick={() => {
+                  handleImproveSection(section, field, identifier, prompt);
+                  setIsOpen(false);
+                }}
+              >
+                {prompt.trim() ? "Generate" : "Auto Improve"}
+              </Button>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  };
 
   const DatePicker = ({
     id,
@@ -1207,7 +1617,10 @@ export default function BuilderPage() {
     if (step.section === "summary") {
       return (
         <div className="space-y-1.5">
-          <Label htmlFor="summary">Professional Summary</Label>
+          <div className="flex items-center">
+            <Label htmlFor="summary">Professional Summary</Label>
+            <AIAssistButton section="summary" field="summary" label="Summary" />
+          </div>
           <Textarea
             id="summary"
             value={resume.personal.summary || ""}
@@ -1215,6 +1628,7 @@ export default function BuilderPage() {
             placeholder="Write 2-3 sentences about your professional background, key skills, and what you're looking for..."
             rows={4}
             className="placeholder:text-muted-foreground"
+            disabled={isImproving && improvingState?.section === "summary"}
           />
         </div>
       );
@@ -1342,6 +1756,12 @@ export default function BuilderPage() {
                   </p>
                 </TooltipContent>
               </Tooltip>
+              <AIAssistButton
+                section="experience"
+                field="description"
+                identifier={currentExpIndex.toString()}
+                label="Bullets"
+              />
             </div>
             <div className="flex gap-2">
               <Input
@@ -1356,32 +1776,42 @@ export default function BuilderPage() {
                   }
                 }}
                 className="placeholder:text-muted-foreground"
+                disabled={isImproving}
               />
-              <Button onClick={addExperienceBullet} size="icon">
+              <Button
+                onClick={addExperienceBullet}
+                size="icon"
+                disabled={isImproving}
+              >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          {exp.description.length > 0 && <Separator />}
+          <div className="space-y-2">
+            {exp.description.length > 0 && <Separator />}
 
-          <div className="space-y-2 max-h-32 overflow-y-auto">
-            {exp.description.map((bullet, idx) => (
-              <div
-                key={idx}
-                className="flex items-start gap-2 p-2 rounded-lg bg-muted/50 border"
-              >
-                <span className="text-sm flex-1 leading-relaxed">{bullet}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 shrink-0"
-                  onClick={() => removeExperienceBullet(idx)}
+            <div className="space-y-2 max-h-32 overflow-y-auto">
+              {exp.description.map((bullet, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-start gap-2 p-2 rounded-lg bg-muted/50 border"
                 >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
+                  <span className="text-sm flex-1 leading-relaxed">
+                    {bullet}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => removeExperienceBullet(idx)}
+                    disabled={isImproving}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       );
@@ -1544,15 +1974,15 @@ export default function BuilderPage() {
     // In preview mode, check if fragment is complete - incomplete fragments should be dimmed
     if (isPreviewMode) {
       const fragmentKeyMap: Record<FragmentName, keyof typeof stepCompletion> =
-      {
-        name: "name",
-        contact: "contact",
-        summary: "summary",
-        "experience-header": "experience",
-        "experience-bullets": "experience-bullets",
-        education: "education",
-        skills: "skills",
-      };
+        {
+          name: "name",
+          contact: "contact",
+          summary: "summary",
+          "experience-header": "experience",
+          "experience-bullets": "experience-bullets",
+          education: "education",
+          skills: "skills",
+        };
       const key = fragmentKeyMap[fragment];
       const isComplete = stepCompletion[key] ?? false;
       return isComplete ? "opacity-100" : "opacity-50";
@@ -1655,10 +2085,11 @@ export default function BuilderPage() {
                   scale: isFragmentActive("name") ? 1.02 : 1,
                 }}
                 transition={{ type: "spring", stiffness: 260, damping: 26 }}
-                className={`transition-all duration-300 rounded-lg -mx-2 px-2 mb-4 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("name")} ${isFragmentActive("name")
-                  ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                  : ""
-                  }`}
+                className={`transition-all duration-300 rounded-lg -mx-2 px-2 mb-4 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("name")} ${
+                  isFragmentActive("name")
+                    ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                    : ""
+                }`}
               >
                 {fullName ? (
                   <h1
@@ -1710,10 +2141,11 @@ export default function BuilderPage() {
                   scale: isFragmentActive("contact") ? 1.02 : 1,
                 }}
                 transition={{ type: "spring", stiffness: 260, damping: 26 }}
-                className={`transition-all duration-300 rounded-lg py-1 -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("contact")} ${isFragmentActive("contact")
-                  ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                  : ""
-                  }`}
+                className={`transition-all duration-300 rounded-lg py-1 -mx-2 px-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("contact")} ${
+                  isFragmentActive("contact")
+                    ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                    : ""
+                }`}
               >
                 {contactItems.length > 0 ? (
                   <div
@@ -1794,10 +2226,11 @@ export default function BuilderPage() {
             }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
             style={{ marginBottom: sectionMargin }}
-            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("summary")} ${isFragmentActive("summary")
-              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-              : ""
-              }`}
+            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("summary")} ${
+              isFragmentActive("summary")
+                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                : ""
+            }`}
           >
             <h3
               className="font-bold uppercase text-foreground border-b border-border"
@@ -1810,7 +2243,13 @@ export default function BuilderPage() {
             >
               Summary
             </h3>
-            {resume.personal.summary ? (
+            {improvingState?.section === "summary" ? (
+              <div className="space-y-2 animate-pulse">
+                <div className="h-3 w-full bg-muted rounded" />
+                <div className="h-3 w-11/12 bg-muted rounded" />
+                <div className="h-3 w-4/5 bg-muted rounded" />
+              </div>
+            ) : resume.personal.summary ? (
               <p
                 className="text-foreground"
                 style={{
@@ -1878,7 +2317,7 @@ export default function BuilderPage() {
                         animate={{
                           scale:
                             isFragmentActive("experience-header") &&
-                              isCurrentExp
+                            isCurrentExp
                               ? 1.02
                               : 1,
                         }}
@@ -1887,10 +2326,11 @@ export default function BuilderPage() {
                           stiffness: 240,
                           damping: 24,
                         }}
-                        className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${isFragmentActive("experience-header") && isCurrentExp
-                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                          : ""
-                          } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
+                        className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${
+                          isFragmentActive("experience-header") && isCurrentExp
+                            ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                            : ""
+                        } ${isCurrentExp ? "opacity-100" : "opacity-70"}`}
                       >
                         <div className="flex justify-between mb-0.5">
                           <div
@@ -1960,7 +2400,7 @@ export default function BuilderPage() {
                           animate={{
                             scale:
                               isFragmentActive("experience-bullets") &&
-                                isCurrentExp
+                              isCurrentExp
                                 ? 1.02
                                 : 1,
                           }}
@@ -1969,35 +2409,61 @@ export default function BuilderPage() {
                             stiffness: 240,
                             damping: 24,
                           }}
-                          className={`transition-all duration-300 rounded-lg p-2 -mx-2 mt-1 pl-3 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${isFragmentActive("experience-bullets") &&
+                          className={`transition-all duration-300 rounded-lg p-2 -mx-2 mt-1 pl-3 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("experience-bullets")} ${
+                            isFragmentActive("experience-bullets") &&
                             isCurrentExp
-                            ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-                            : ""
-                            }`}
+                              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                              : ""
+                          }`}
                         >
-                          {exp.description.map((bullet, bulletIdx) => (
-                            <div
-                              key={bulletIdx}
-                              className="flex flex-row mb-0.5"
-                            >
-                              <span
-                                className="text-muted-foreground w-2"
-                                style={{
-                                  fontSize: `${baseFontSize}pt`,
-                                }}
-                              >
-                                •
-                              </span>
-                              <span
-                                className="text-foreground flex-1 leading-[1.4]"
-                                style={{
-                                  fontSize: `${bulletSize}pt`,
-                                }}
-                              >
-                                {bullet}
-                              </span>
+                          {improvingState?.section === "experience" &&
+                          improvingState?.field === "description" &&
+                          improvingState?.identifier === idx.toString() ? (
+                            <div className="space-y-2 animate-pulse">
+                              <div className="flex flex-row gap-2">
+                                <span className="text-muted-foreground w-2">
+                                  •
+                                </span>
+                                <div className="h-3 flex-1 bg-muted rounded" />
+                              </div>
+                              <div className="flex flex-row gap-2">
+                                <span className="text-muted-foreground w-2">
+                                  •
+                                </span>
+                                <div className="h-3 flex-1 bg-muted rounded" />
+                              </div>
+                              <div className="flex flex-row gap-2">
+                                <span className="text-muted-foreground w-2">
+                                  •
+                                </span>
+                                <div className="h-3 w-4/5 bg-muted rounded" />
+                              </div>
                             </div>
-                          ))}
+                          ) : (
+                            exp.description.map((bullet, bulletIdx) => (
+                              <div
+                                key={bulletIdx}
+                                className="flex flex-row mb-0.5"
+                              >
+                                <span
+                                  className="text-muted-foreground w-2"
+                                  style={{
+                                    fontSize: `${baseFontSize}pt`,
+                                  }}
+                                >
+                                  •
+                                </span>
+                                <span
+                                  className="text-foreground flex-1 leading-[1.4]"
+                                  style={{
+                                    fontSize: `${bulletSize}pt`,
+                                  }}
+                                >
+                                  {bullet}
+                                </span>
+                              </div>
+                            ))
+                          )}
                         </motion.div>
                       )}
                     </div>
@@ -2112,10 +2578,11 @@ export default function BuilderPage() {
             }}
             transition={{ type: "spring", stiffness: 240, damping: 24 }}
             style={{ marginBottom: sectionMargin }}
-            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${isFragmentActive("skills")
-              ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
-              : ""
-              }`}
+            className={`transition-all duration-300 rounded-lg p-2 -mx-2 ${!isPreviewMode ? "cursor-pointer hover:bg-primary/5" : ""} ${getFragmentOpacity("skills")} ${
+              isFragmentActive("skills")
+                ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-sm"
+                : ""
+            }`}
           >
             <h3
               className="font-bold uppercase text-foreground border-b border-border mb-2 pb-1 tracking-[1px]"
@@ -2193,6 +2660,135 @@ export default function BuilderPage() {
           {/* Navbar - Only show in Edit Mode */}
           {!isPreviewMode && <Navbar />}
 
+          {/* Improvement Banner */}
+          <AnimatePresence>
+            {alternateResume && !isPreviewMode && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="bg-primary/10 border-b border-primary/20 overflow-hidden"
+              >
+                <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-primary">
+                    <Sparkles className="h-4 w-4" />
+                    <span className="font-medium">
+                      {versionLabel === "improved"
+                        ? `Viewing ${jobDescription ? "Tailored" : "Improved"} Version`
+                        : "Viewing Original Version"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleToggleVersion}
+                      className="text-primary hover:text-primary hover:bg-primary/10 h-7 text-xs"
+                    >
+                      <Undo2 className="h-3 w-3 mr-1.5" />
+                      {versionLabel === "improved"
+                        ? "View Original"
+                        : "View Improved"}
+                    </Button>
+                    <div className="w-px h-4 bg-primary/20 mx-1" />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleRevertToOriginal}
+                      className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 text-xs"
+                    >
+                      <XCircle className="h-3 w-3 mr-1.5" />
+                      {versionLabel === "improved"
+                        ? "Discard"
+                        : "Discard Improved"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleKeepImproved}
+                      className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      <CheckCircle2 className="h-3 w-3 mr-1.5" />
+                      {versionLabel === "improved"
+                        ? "Keep Changes"
+                        : "Keep Original"}
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Improve/Generate Resume Dialog */}
+          <Dialog open={showImproveDialog} onOpenChange={setShowImproveDialog}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  {isResumeEmpty()
+                    ? "Generate Resume with AI"
+                    : "AI Resume Improver"}
+                </DialogTitle>
+                <DialogDescription>
+                  {isResumeEmpty()
+                    ? "Provide some information about yourself to generate a resume. AI will leave empty any parts you don't provide."
+                    : "Enhance your resume with AI. Optionally provide a job description to tailor your resume for a specific role."}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="job-description">
+                    {isResumeEmpty()
+                      ? "Information about yourself *"
+                      : "Job Description (Optional)"}
+                  </Label>
+                  <Textarea
+                    id="job-description"
+                    placeholder={
+                      isResumeEmpty()
+                        ? "Tell us about your experience, skills, education, or paste a job description to tailor your resume..."
+                        : "Paste the job description here..."
+                    }
+                    className="h-32 text-sm resize-none"
+                    value={jobDescription}
+                    onChange={(e) => setJobDescription(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {isResumeEmpty()
+                      ? "Provide at least some information to generate your resume. You can edit individual sections later."
+                      : "Leave empty for general ATS optimization and improvements."}
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowImproveDialog(false)}
+                  disabled={isImproving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleImproveResume}
+                  disabled={
+                    isImproving || (isResumeEmpty() && !jobDescription.trim())
+                  }
+                >
+                  {isImproving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      {isResumeEmpty() ? "Generating..." : "Improving..."}
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="h-4 w-4 mr-2" />
+                      {isResumeEmpty() ? "Generate Resume" : "Improve Resume"}
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* Reset Dialog (controlled, shared with mobile) */}
           <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
             <AlertDialogContent>
@@ -2254,12 +2850,13 @@ export default function BuilderPage() {
                             );
                             if (stepIndex !== -1) setCurrentStep(stepIndex);
                           }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left ${isActive
-                            ? "bg-primary text-primary-foreground"
-                            : status === "complete"
-                              ? "bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20"
-                              : "hover:bg-muted"
-                            }`}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left ${
+                            isActive
+                              ? "bg-primary text-primary-foreground"
+                              : status === "complete"
+                                ? "bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20"
+                                : "hover:bg-muted"
+                          }`}
                         >
                           <span className="shrink-0">
                             {SECTION_ICONS[section]}
@@ -2304,6 +2901,25 @@ export default function BuilderPage() {
                     <Eye className="h-4 w-4 mr-2" />
                     Preview
                   </Button>
+
+                  <Button
+                    variant="secondary"
+                    className={`w-full mt-2 font-medium ${
+                      alternateResume
+                        ? "bg-primary/10 text-primary hover:bg-primary/20"
+                        : "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-200/20 hover:from-indigo-500/20 hover:to-purple-500/20"
+                    }`}
+                    size="sm"
+                    onClick={() => setShowImproveDialog(true)}
+                    disabled={isImproving}
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    {isResumeEmpty()
+                      ? "Generate with AI"
+                      : alternateResume
+                        ? "Improve Again"
+                        : "Improve with AI"}
+                  </Button>
                 </div>
 
                 <div className="p-4 border-t text-xs text-muted-foreground">
@@ -2316,7 +2932,10 @@ export default function BuilderPage() {
             <div className="flex-1 flex flex-col min-w-0 bg-muted/30 relative">
               {/* Preview Toolbar - Only in Preview Mode */}
               {isPreviewMode && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-background/80 backdrop-blur-md shadow-lg border rounded-full px-4 py-2">
+                <div
+                  ref={previewToolbarRef}
+                  className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-background/80 backdrop-blur-md shadow-lg border rounded-full px-4 py-2"
+                >
                   <Button
                     variant="ghost"
                     size="sm"
@@ -2352,12 +2971,13 @@ export default function BuilderPage() {
                                 setLayoutConfig(preset);
                               }
                             }}
-                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isSelected
-                              ? "bg-primary text-primary-foreground shadow-sm"
-                              : isValid
-                                ? "hover:text-foreground text-muted-foreground"
-                                : "text-muted-foreground/40 cursor-not-allowed"
-                              }`}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : isValid
+                                  ? "hover:text-foreground text-muted-foreground"
+                                  : "text-muted-foreground/40 cursor-not-allowed"
+                            }`}
                           >
                             {preset.id.charAt(0).toUpperCase() +
                               preset.id.slice(1).replace("-", " ")}
@@ -2374,7 +2994,13 @@ export default function BuilderPage() {
                 ref={previewContainerRef}
                 className="flex-1 overflow-hidden relative"
               >
-                <div className="absolute inset-0 flex items-center justify-center p-8">
+                <div
+                  className="absolute inset-0 flex items-center justify-center p-8"
+                  style={{
+                    paddingTop: `${toolbarHeight + 32}px`,
+                    paddingBottom: "80px", // Space for export button
+                  }}
+                >
                   <motion.div
                     animate={{
                       scale: isPreviewMode ? previewScale : zoomTransform.scale,
@@ -2389,25 +3015,45 @@ export default function BuilderPage() {
                       transformOrigin: "center center",
                     }}
                   >
-                    {renderResume()}
+                    {improvingState?.isGlobal ? (
+                      <div className="w-[210mm] h-[297mm] bg-background shadow-sm">
+                        <ResumeSkeleton />
+                      </div>
+                    ) : (
+                      renderResume()
+                    )}
                   </motion.div>
                 </div>
 
-                {/* Export PDF Button - Bottom Right (Desktop) */}
+                {/* Bottom Actions (Export / Cancel) */}
                 {isPreviewMode && (
-                  <Button
-                    onClick={exportPDF}
-                    disabled={isExporting}
-                    className="absolute bottom-6 right-6 z-50 shadow-lg"
-                    size="lg"
-                  >
-                    {isExporting ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <div className="absolute bottom-6 right-6 z-50">
+                    {improvingState?.isGlobal ? (
+                      <Button
+                        size="lg"
+                        variant="destructive"
+                        className="shadow-xl animate-in fade-in slide-in-from-bottom-4"
+                        onClick={cancelImprovement}
+                      >
+                        <StopCircle className="h-4 w-4 mr-2" />
+                        Stop Generating
+                      </Button>
                     ) : (
-                      <Download className="h-4 w-4 mr-2" />
+                      <Button
+                        size="lg"
+                        onClick={exportPDF}
+                        disabled={isExporting}
+                        className="shadow-xl"
+                      >
+                        {isExporting ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4 mr-2" />
+                        )}
+                        {isExporting ? "Exporting..." : "Export PDF"}
+                      </Button>
                     )}
-                    {isExporting ? "Exporting..." : "Export PDF"}
-                  </Button>
+                  </div>
                 )}
               </div>
 
@@ -2542,12 +3188,13 @@ export default function BuilderPage() {
                             setLayoutConfig(preset);
                           }
                         }}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isSelected
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : isValid
-                            ? "text-muted-foreground"
-                            : "text-muted-foreground/40"
-                          }`}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : isValid
+                              ? "text-muted-foreground"
+                              : "text-muted-foreground/40"
+                        }`}
                       >
                         {preset.id.charAt(0).toUpperCase()}
                       </button>
@@ -2562,11 +3209,11 @@ export default function BuilderPage() {
                 animate={{
                   scale: isPreviewMode
                     ? Math.min(
-                      ((previewContainerRef.current?.offsetWidth || 400) /
-                        794) *
-                      0.95,
-                      0.5,
-                    )
+                        ((previewContainerRef.current?.offsetWidth || 400) /
+                          794) *
+                          0.95,
+                        0.5,
+                      )
                     : zoomTransform.scale,
                   y: isPreviewMode ? 0 : zoomTransform.yPixels,
                 }}
